@@ -270,4 +270,5 @@ def mine():
     rows = "".join("<a class='card' href='/d/" + sid + "?pw=" + quote(pw) + "'><b>" + escape(v['name']) + "</b><br>" + escape(v.get('type','')) + " - " + str(len(v.get('bookings',[]))) + " bookings</a>" for sid, v in owned)
     return head + "<div class='top'><h1>My businesses</h1></div><div class='wrap'>" + rows + "<a href='/new'>+ Add another business</a> | <a href='/'>Log out</a></div>"
 
-app.run(host="0.0.0.0", port=5000)
+import os
+app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
