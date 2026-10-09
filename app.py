@@ -745,5 +745,39 @@ def _v2_on(a):
         return False
     return st == "active"
 
+
+_bb_fload, _bb_fsave = load, save
+def _bb_db():
+    import pg8000.native, ssl
+    from urllib.parse import urlparse, unquote
+    u = urlparse(os.environ["DATABASE_URL"])
+    c = pg8000.native.Connection(user=unquote(u.username), password=unquote(u.password), host=u.hostname, port=u.port or 5432, database=u.path.lstrip("/"), ssl_context=ssl.create_default_context(), timeout=20)
+    c.run("CREATE TABLE IF NOT EXISTS bb_kv (k TEXT PRIMARY KEY, v TEXT)")
+    return c
+def load():
+    if not os.environ.get("DATABASE_URL"):
+        return _bb_fload()
+    c = _bb_db()
+    try:
+        r = c.run("SELECT v FROM bb_kv WHERE k='shops'")
+    finally:
+        c.close()
+    if r:
+        return json.loads(r[0][0])
+    try:
+        d = _bb_fload()
+    except Exception:
+        d = {}
+    save(d)
+    return d
+def save(d):
+    if not os.environ.get("DATABASE_URL"):
+        return _bb_fsave(d)
+    c = _bb_db()
+    try:
+        c.run("INSERT INTO bb_kv (k, v) VALUES ('shops', :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", v=json.dumps(d))
+    finally:
+        c.close()
+
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
