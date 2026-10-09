@@ -17,7 +17,7 @@ def build_slots(shop):
     taken={b.get("when") for b in shop.get("bookings",[])}
     labels=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
     out=[]
-    today=datetime.now()
+    today=(datetime.utcnow() - timedelta(hours=10))
     for dd in range(14):
         day=today+timedelta(days=dd)
         if day.weekday() not in days: continue
@@ -151,7 +151,7 @@ def book_page(sid):
 <input name='email' type='email' placeholder='Email (we send your booking link)' required>
 <select name='service'>{opts}</select>
 {slots}
-<div style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;font-size:14px'><b>Cancellation terms</b><br>You pay in full now to hold your spot. You can <b>reschedule for free</b>. If you <b>cancel</b>, you get a refund minus a small processing fee (card fees + 3.7% service fee).</div>
+<div style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;font-size:14px'><b>Cancellation &amp; no-show terms</b><br>You pay in full now to hold your spot. You can <b>reschedule with the owner</b>. If you <b>cancel</b>, you get a refund minus a small processing fee (card fees + 3.7% service fee).<br><b>No-shows:</b> if you miss your appointment without cancelling, your payment is non-refundable.</div>
 <label style='display:flex;gap:8px;align-items:flex-start;margin:10px 0'><input type='checkbox' name='agree' value='1' required style='width:auto;margin-top:3px'> I have read and agree to the cancellation terms</label>
 <button>Book now</button></form>"""
 def _bb_g(o, k):
@@ -219,6 +219,40 @@ def dash(sid):
         rows = "".join("<div class='card'><b>" + escape(x['name']) + "</b> - " + escape(x['service']) + "<br>" + escape(x['when']) + "<br>" + escape(x['phone']) + " - fee $" + str(x.get('fee', x.get('deposit', 0))) + "</div>" for x in reversed(bk))
     else:
         rows = "<div class='card'>No bookings yet. Share your link to get your first one!</div>"
+    _now = datetime.utcnow() - timedelta(hours=10)
+    _due = []
+    for x in bk:
+        try: _t = datetime.strptime(x.get("when", ""), "%Y-%m-%d %H:%M")
+        except Exception: continue
+        if _t <= _now and x.get("rt") and not x.get("done"):
+            _due.append(x)
+    _up, _dn = [], [x for x in bk if x.get("done")]
+    for x in bk:
+        if x.get("done") or x in _due: continue
+        try: _t = datetime.strptime(x.get("when", ""), "%Y-%m-%d %H:%M")
+        except Exception: _t = None
+        if _t is None or _t > _now: _up.append(x)
+        else: _dn.append(x)
+    _up.sort(key=lambda x: x.get("when", ""))
+    _dn.sort(key=lambda x: x.get("when", ""), reverse=True)
+    _ns = list(reversed(shop.get("noshows", [])))
+    def _card(x, extra="", clr="#1a6dff"):
+        ph = str(x.get("phone", "")); em = str(x.get("email", ""))
+        try: fee = "%.2f" % float(x.get("fee", x.get("deposit", 0)) or 0)
+        except Exception: fee = str(x.get("fee", ""))
+        c = "<div class='card' style='border-left:6px solid " + clr + "'><b>" + escape(x.get("name", "")) + "</b><br>" + escape(x.get("service", "")) + " &middot; " + escape(x.get("when", ""))
+        if x.get("moved_from"): c += "<br><b style='color:#e08a00'>&#128260; Moved by customer</b> (was " + escape(x["moved_from"]) + ")"
+        if ph: c += "<br>&#128222; <a href='tel:" + escape(ph) + "'>" + escape(ph) + "</a>"
+        if em: c += "<br>&#9993; <a href='mailto:" + escape(em) + "'>" + escape(em) + "</a>"
+        return c + "<br>Fee: $" + fee + extra + "</div>"
+    def _sec(title, items, empty, extra=lambda x: "", clr="#1a6dff"):
+        return "<h3 style='color:" + clr + "'>" + title + " (" + str(len(items)) + ")</h3>" + ("".join(_card(x, extra(x), clr) for x in items) if items else "<div class='card' style='color:#777'>" + empty + "</div>")
+    _btn = lambda x: "<form method='post' action='/ns/" + sid + "/" + x["rt"] + "' style='margin-top:8px'><button name='a' value='showed'>Showed up &#10003;</button> <button name='a' value='noshow' onclick=\"return confirm('Mark as no-show? They will NOT get a refund.')\">Mark no-show</button></form><a href='/ns/" + sid + "/" + x["rt"] + "'>Reschedule</a>"
+    rows = ""
+    if _due: rows += _sec("&#9888; Did they show up?", _due, "", _btn, "#f0a500")
+    rows += _sec("Upcoming", _up, "No upcoming appointments.", clr="#1a6dff")
+    rows += _sec("Completed", _dn, "None yet.", clr="#1faa59")
+    rows += _sec("No-shows", _ns, "None. Nice!", clr="#e23b3b")
     acct = shop.get("acct", "")
     pq = "?pw=" + quote(pw)
     cb = "display:block;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700;margin-top:10px"
@@ -228,7 +262,7 @@ def dash(sid):
         pay = "<div class='card note'><b>Payment setup not finished</b><a style='" + cb + "' href='/connect/" + sid + pq + "'>Finish payment setup</a></div>"
     else:
         pay = "<div class='card'><b>Get paid online</b><br>Connect your bank so customers can pay when they book. Takes a few minutes.<a style='" + cb + "' href='/connect/" + sid + pq + "'>Connect payments</a></div>"
-    body = ref + head + "<div class='top'><h1>" + escape(shop['name']) + "</h1><p>Your dashboard</p><a href='/' style='color:#fff;font-weight:700;text-decoration:none'>&#127968; Home</a></div><div class='wrap'>" + note + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/b/" + sid + "' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>Book an appointment</a></div>" + pay + "<h3>Bookings</h3>" + rows + "<div class='card'><a href='/b/" + sid + "'>View my public page</a> | <a href='/mine?em=" + quote(shop.get('email','')) + "&pw=" + quote(pw) + "'>All my businesses</a> | <a href='/pw/" + sid + "'>Change password</a> | <a href='/'>Log out</a></div></div>"
+    body = ref + head + "<div class='top'><h1>" + escape(shop['name']) + "</h1><p>Your dashboard</p><a href='/' style='color:#fff;font-weight:700;text-decoration:none'>&#127968; Home</a></div><div class='wrap'>" + note + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/b/" + sid + "' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>Book an appointment</a></div>" + pay + rows + "<div class='card'><a href='/b/" + sid + "'>View my public page</a> | <a href='/mine?em=" + quote(shop.get('email','')) + "&pw=" + quote(pw) + "'>All my businesses</a> | <a href='/pw/" + sid + "'>Change password</a> | <a href='/'>Log out</a></div></div>"
     return body.replace("<", chr(60)).replace(">", chr(62))
 
 import smtplib
@@ -434,7 +468,7 @@ def paid(sid):
         notify("New PAID booking at " + shop["name"], m["name"] + " - " + m["service"] + " - " + m["when"] + " - " + m["phone"] + " - paid $" + ("%.2f" % fee), shop.get("email") or GMAIL)
         if m.get("email"):
             ml = request.host_url + "m/" + sid + "/" + rt
-            notify("Your booking at " + shop["name"], "You're booked and paid!\n\n" + m["service"] + " at " + shop["name"] + "\nWhen: " + m["when"] + "\nPaid: $" + ("%.2f" % fee) + "\n\nNeed to cancel or reschedule? Use this link:\n" + ml + "\n\nRescheduling is free. If you cancel, you get a refund minus a small processing fee (card fees + 3.7% service fee).", m["email"])
+            notify("Your booking at " + shop["name"], "You're booked and paid!\n\n" + m["service"] + " at " + shop["name"] + "\nWhen: " + m["when"] + "\nPaid: $" + ("%.2f" % fee) + "\n\nNeed to cancel or reschedule? Use this link:\n" + ml + "\n\nTo reschedule, work it out with the business owner. If you cancel, you get a refund minus a small processing fee (card fees + 3.7% service fee). If you miss your appointment without cancelling, your payment is non-refundable.", m["email"])
     return S + "<h1>You're booked and paid!</h1><p>" + str(escape(m["service"])) + " at " + str(escape(shop["name"])) + "</p><p>Booking fee paid: $" + ("%.2f" % fee) + ". The business has been notified.</p><p style='background:#eef3ff;border-radius:10px;padding:12px'>&#9993; We emailed your confirmation to <b>" + str(escape(m.get("email", ""))) + "</b>. It has your link to <b>reschedule or cancel</b>. Check your spam folder if you don't see it.</p><p><b>Need to cancel or reschedule? Save this link:</b><br><a href='/m/" + sid + "/" + rt + "'>" + request.host_url + "m/" + sid + "/" + rt + "</a></p><p><b>After your appointment, leave a review here (save this link):</b><br><a href='/r/" + sid + "/" + rt + "'>" + request.host_url + "r/" + sid + "/" + rt + "</a></p><a href='/b/" + sid + "'>Back</a>"
 
 
@@ -457,7 +491,7 @@ def _bb_manage(sid, rt):
     amt = max(total - keep, 0)
     amt_s = "%.2f" % (amt / 100)
     try:
-        started = datetime.strptime(b.get("when", ""), "%Y-%m-%d %H:%M") <= datetime.now()
+        started = datetime.strptime(b.get("when", ""), "%Y-%m-%d %H:%M") <= (datetime.utcnow() - timedelta(hours=10))
     except Exception:
         started = False
     head = "<h1>Your booking</h1><p><b>" + str(escape(b.get("service", ""))) + "</b> at " + str(escape(shop["name"])) + "</p><p>When: " + str(escape(b.get("when", ""))) + "</p><p>Paid: $" + ("%.2f" % (total / 100)) + "</p>"
@@ -477,7 +511,7 @@ def _bb_manage(sid, rt):
             except Exception as e:
                 return S + head + "<p>Refund failed: " + str(escape(str(e))) + "</p>"
         b["refund"] = amt / 100
-        b["cancelled_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        b["cancelled_at"] = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
         shop["bookings"].remove(b)
         shop.setdefault("cancelled", []).append(b)
         save(d)
@@ -493,6 +527,7 @@ def _bb_manage(sid, rt):
             return S + head + "<p>That time isn't available anymore. Please pick another.</p><a href='/m/" + sid + "/" + rt + "'>Back</a>"
         old = b.get("when", "")
         b["when"] = nw
+        b["moved_from"] = old
         save(d)
         try:
             notify("Booking RESCHEDULED at " + shop["name"], b.get("name", "") + " - " + b.get("service", "") + " - moved from " + old + " to " + nw, shop.get("email") or GMAIL)
@@ -506,6 +541,38 @@ def _bb_manage(sid, rt):
     cancel = "<form method='post' data-m='Cancel this booking? You will be refunded $" + amt_s + ".' onsubmit='return confirm(this.dataset.m)'><input type='hidden' name='act' value='cancel'><button style='background:#d33'>Cancel booking (refund $" + amt_s + ")</button></form>"
     return S + head + resched + "<p style='font-size:14px'>Cancelling refunds everything except the processing fee (card fees + 3.7% service fee).</p>" + cancel
 
+
+@app.route("/ns/<sid>/<rt>", methods=["GET", "POST"])
+def _bb_noshow(sid, rt):
+    d = load()
+    shop = d.get(sid)
+    if not shop or not _bb_ok(sid, "", shop):
+        return redirect("/d/" + sid)
+    b = next((x for x in shop.get("bookings", []) if x.get("rt") == rt), None)
+    if not b:
+        return redirect("/d/" + sid)
+    a = request.form.get("a", "")
+    if request.method == "POST" and a == "noshow":
+        shop["bookings"].remove(b)
+        b["noshow_at"] = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+        shop.setdefault("noshows", []).append(b)
+        save(d)
+        return redirect("/d/" + sid)
+    if request.method == "POST" and a == "showed":
+        b["done"] = True
+        save(d)
+        return redirect("/d/" + sid)
+    if request.method == "POST" and a == "move":
+        w = request.form.get("when", "").replace("T", " ")[:16]
+        try: datetime.strptime(w, "%Y-%m-%d %H:%M")
+        except Exception: return S + "<h1>Pick a new date and time</h1><a href='/ns/" + sid + "/" + rt + "'>Back</a>"
+        b["when"] = w
+        b.pop("moved_from", None)
+        save(d)
+        if b.get("email"):
+            notify("Your appointment at " + shop["name"] + " was moved", "Your " + b.get("service", "") + " at " + shop["name"] + " is now:\n" + w + "\n\nNeed to change it? Use this link:\n" + request.host_url + "m/" + sid + "/" + rt, b["email"])
+        return redirect("/d/" + sid)
+    return S + "<h1>Reschedule</h1><p><b>" + str(escape(b.get("name", ""))) + "</b> - " + str(escape(b.get("service", ""))) + "<br>Was: " + str(escape(b.get("when", ""))) + "</p><form method='post'><input type='hidden' name='a' value='move'><input name='when' type='datetime-local' required><button>Move appointment</button></form><a href='/d/" + sid + "'>Back to dashboard</a>"
 
 @app.route("/r/<sid>/<rt>", methods=["GET", "POST"])
 def leave_review(sid, rt):
