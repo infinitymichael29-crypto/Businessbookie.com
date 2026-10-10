@@ -214,7 +214,7 @@ def dash(sid):
     hrs = days + " | " + shop.get("open", "") + " - " + shop.get("close", "")
     ref = "<meta http-equiv='refresh' content='30;url=/d/" + sid + "?pw=" + quote(pw) + "'>"
     head = "<meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;font-family:system-ui,Arial;background:#eef3ff}.top{background:#1a6dff;color:#fff;padding:22px 18px}.top h1{margin:0;font-size:26px}.top p{margin:4px 0 0;opacity:.9}.wrap{padding:16px;max-width:460px;margin:auto}.card{background:#fff;padding:16px;border-radius:14px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08)}.big{font-size:34px;font-weight:800;color:#1a6dff}a{color:#1a6dff}.note{background:#fff3cd}</style>"
-    note = "" if shop.get("live", True) else "<div class='card note'>Almost there! Check your email and tap the confirm link to go live.</div>"
+    note = "" if shop.get("live", True) else "<div class='card note'><b>&#9888; Confirm your email to go live.</b> Your business won't show in the directory until you tap the link we emailed you. Check spam too.<br><a href='/resend/" + sid + "' style='display:inline-block;margin-top:8px;font-weight:700'>Resend confirm link</a></div>"
     if bk:
         rows = "".join("<div class='card'><b>" + escape(x['name']) + "</b> - " + escape(x['service']) + "<br>" + escape(x['when']) + "<br>" + escape(x['phone']) + " - fee $" + str(x.get('fee', x.get('deposit', 0))) + "</div>" for x in reversed(bk))
     else:
@@ -303,7 +303,9 @@ def confirm(sid, tok):
     if sid in d and d[sid].get("token") == tok:
         d[sid]["live"] = True
         save(d)
-        return S + f"<h1>You're live!</h1><p>Customer booking link:</p><a href='/b/{sid}'>/b/{sid}</a><p>Your bookings:</p><a href='/d/{sid}'>/d/{sid}</a>"
+        b1 = "display:block;background:#1a6dff;color:#fff;padding:14px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
+        b2 = "display:block;border:2px solid #1a6dff;color:#1a6dff;padding:12px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
+        return "<meta http-equiv='refresh' content='4;url=/d/" + sid + "'>" + S + "<h1>&#127881; You're live!</h1><p><b>" + str(escape(d[sid].get("name", ""))) + "</b> now shows in the Business Bookie directory. Customers can find and book you.</p><p>Taking you to your dashboard...</p><a style='" + b1 + "' href='/d/" + sid + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a>"
     return S + "<h1>Link not valid</h1>", 404
 @app.route("/find")
 def find():
@@ -632,7 +634,7 @@ def setup_done(sid):
     dl = "/d/" + sid + "?pw=" + quote(request.args.get("pw", ""))
     b1 = "display:block;background:#1a6dff;color:#fff;padding:14px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
     b2 = "display:block;border:2px solid #1a6dff;color:#1a6dff;padding:12px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
-    return S + "<h1>You're all set!</h1><p><b>" + str(escape(d[sid]["name"])) + "</b> is ready. Check your email and tap the confirm link to go live.</p><a style='" + b1 + "' href='" + dl + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a><a style='" + b2 + "' href='/'>Back to home</a>"
+    return S + "<h1>You're all set!</h1><p><b>" + str(escape(d[sid]["name"])) + "</b> is ready.</p><div style='background:#fff3cd;border:2px solid #f0a500;border-radius:12px;padding:14px;margin:12px 0'><b>&#9888; One last step:</b> we emailed a confirm link from bookings@business-bookie.com. Tap it so your business shows up in the directory. Check your spam folder if you don't see it.</div><a style='" + b1 + "' href='" + dl + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a><a style='" + b2 + "' href='/'>Back to home</a>"
 
 
 def _bb_save(d):
@@ -788,6 +790,18 @@ def save(d):
         c.run("INSERT INTO bb_kv (k, v) VALUES ('shops', :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", v=json.dumps(d))
     finally:
         c.close()
+
+
+@app.route("/resend/<sid>")
+def _bb_resend(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return S + "<h1>Not found</h1>", 404
+    if shop.get("live", True):
+        return S + "<h1>Already confirmed</h1><p>Your business is live.</p><a href='/d/" + sid + "'>Back to dashboard</a>"
+    notify("Confirm your business on Business Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + shop.get("token", ""), shop.get("email"))
+    return S + "<h1>Sent!</h1><p>We sent a new confirm link to " + str(escape(shop.get("email", ""))) + ". Check your inbox and spam folder.</p><a href='/d/" + sid + "'>Back to dashboard</a>"
 
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
