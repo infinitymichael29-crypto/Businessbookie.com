@@ -275,7 +275,7 @@ def notify(subject, body, to=None):
         try:
             import json as _j, urllib.request as _u
             dt = _j.dumps({"from": "Business Bookie <bookings@business-bookie.com>", "to": [to or GMAIL], "subject": subject, "text": body}).encode()
-            rq = _u.Request("https://api.resend.com/emails", data=dt, headers={"Authorization": "Bearer " + rk, "Content-Type": "application/json"})
+            rq = _u.Request("https://api.resend.com/emails", data=dt, headers={"Authorization": "Bearer " + rk, "Content-Type": "application/json", "User-Agent": "BusinessBookie/1.0"})
             _u.urlopen(rq, timeout=20).read()
         except Exception as e:
             print("resend failed:", e)
