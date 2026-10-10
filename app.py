@@ -262,7 +262,7 @@ def dash(sid):
         pay = "<div class='card note'><b>Payment setup not finished</b><a style='" + cb + "' href='/connect/" + sid + pq + "'>Finish payment setup</a></div>"
     else:
         pay = "<div class='card'><b>Get paid online</b><br>Connect your bank so customers can pay when they book. Takes a few minutes.<a style='" + cb + "' href='/connect/" + sid + pq + "'>Connect payments</a></div>"
-    body = ref + head + "<div class='top'><h1>" + escape(shop['name']) + "</h1><p>Your dashboard</p><a href='/' style='color:#fff;font-weight:700;text-decoration:none'>&#127968; Home</a></div><div class='wrap'>" + note + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/b/" + sid + "' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>Book an appointment</a></div>" + pay + rows + "<div class='card'><a href='/b/" + sid + "'>View my public page</a> | <a href='/mine?em=" + quote(shop.get('email','')) + "&pw=" + quote(pw) + "'>All my businesses</a> | <a href='/pw/" + sid + "'>Change password</a> | <a href='/'>Log out</a></div></div>"
+    body = ref + head + "<div class='top'><h1>" + escape(shop['name']) + "</h1><p>Your dashboard</p><a href='/' style='color:#fff;font-weight:700;text-decoration:none'>&#127968; Home</a></div><div class='wrap'>" + note + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/b/" + sid + "' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>Book an appointment</a></div>" + pay + rows + "<div class='card'><a href='/b/" + sid + "'>View my public page</a> | <a href='/mine?em=" + quote(shop.get('email','')) + "&pw=" + quote(pw) + "'>All my businesses</a> | <a href='/pw/" + sid + "'>Change password</a> | <a href='/logout'>Log out</a> | <a href='/del/" + sid + "' style='color:#d33'>Delete business</a></div></div>"
     return body.replace("<", chr(60)).replace(">", chr(62))
 
 import smtplib
@@ -368,8 +368,8 @@ def mine():
     if not owned: return redirect("/login")
     if len(owned) == 1: return redirect("/d/" + owned[0][0] + "?pw=" + quote(pw))
     head = "<meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;font-family:system-ui,Arial;background:#eef3ff}.top{background:#1a6dff;color:#fff;padding:22px 18px}.top h1{margin:0;font-size:26px}.wrap{padding:16px;max-width:460px;margin:auto}.card{display:block;background:#fff;padding:16px;border-radius:14px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08);color:#123;text-decoration:none}a{color:#1a6dff}</style>"
-    rows = "".join("<a class='card' href='/d/" + sid + "?pw=" + quote(pw) + "'><b>" + escape(v['name']) + "</b><br>" + escape(v.get('type','')) + " - " + str(len(v.get('bookings',[]))) + " bookings</a>" for sid, v in owned)
-    return head + "<div class='top'><h1>My businesses</h1></div><div class='wrap'>" + rows + "<a href='/new'>+ Add another business</a> | <a href='/'>Log out</a></div>"
+    rows = "".join("<a class='card' style='border-left:6px solid " + ("#1faa59" if v.get("live", True) else "#f0a500;background:#fff8e1") + "' href='/d/" + sid + "?pw=" + quote(pw) + "'><b>" + escape(v['name']) + "</b> " + ("<span style='color:#1faa59;font-weight:700'>&#9679; Live</span>" if v.get("live", True) else "<span style='color:#b37400;font-weight:700'>&#9888; Needs email confirmation</span>") + "<br>" + escape(v.get('type','')) + " - " + str(len(v.get('bookings',[]))) + " bookings</a>" for sid, v in owned)
+    return head + "<div class='top'><h1>My businesses</h1></div><div class='wrap'>" + rows + "<a href='/new'>+ Add another business</a> | <a href='/logout'>Log out</a></div>"
 
 
 import os, secrets as _bb_secrets
@@ -802,6 +802,53 @@ def _bb_resend(sid):
         return S + "<h1>Already confirmed</h1><p>Your business is live.</p><a href='/d/" + sid + "'>Back to dashboard</a>"
     notify("Confirm your business on Business Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + shop.get("token", ""), shop.get("email"))
     return S + "<h1>Sent!</h1><p>We sent a new confirm link to " + str(escape(shop.get("email", ""))) + ". Check your inbox and spam folder.</p><a href='/d/" + sid + "'>Back to dashboard</a>"
+
+
+@app.route("/del/<sid>", methods=["GET", "POST"])
+def _bb_delete(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return S + "<h1>Not found</h1>", 404
+    now = datetime.utcnow() - timedelta(hours=10)
+    def _isup(b):
+        try:
+            return datetime.strptime(b.get("when", ""), "%Y-%m-%d %H:%M") >= now
+        except Exception:
+            return False
+    up = [b for b in shop.get("bookings", []) if _isup(b)]
+    total = sum(float(b.get("fee") or 0) for b in up if b.get("pi"))
+    name = shop.get("name", "")
+    if request.method == "POST":
+        if not _bb_ok(sid, request.form.get("pw", ""), shop):
+            return S + "<h1>Wrong password</h1><a href='/del/" + sid + "'>Try again</a>"
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        for b in up:
+            if b.get("pi") and not b.get("full_refund"):
+                kw = {"payment_intent": b["pi"]}
+                if b.get("keep") is not None:
+                    kw["reverse_transfer"] = True
+                    kw["refund_application_fee"] = True
+                try:
+                    stripe.Refund.create(**kw)
+                except Exception as e:
+                    save(d)
+                    return S + "<h1>Refund failed</h1><p>" + str(escape(str(e))) + "</p><p>Your business was NOT deleted.</p><a href='/d/" + sid + "'>Back</a>"
+                b["full_refund"] = True
+        for b in up:
+            if b.get("email"):
+                notify("Your booking at " + name + " was cancelled", "Sorry! " + name + " has closed on Business Bookie, so your " + b.get("service", "") + " on " + b.get("when", "") + " is cancelled." + (" You will be refunded. It can take 5 to 10 business days to show on your card." if b.get("pi") else ""), b["email"])
+        notify("Business deleted: " + name, "Your business was removed from Business Bookie. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.", shop.get("email") or GMAIL)
+        del d[sid]
+        save(d)
+        _bb_sess.pop("own_" + sid, None)
+        em = shop.get("email", "")
+        left = [k for k, v in d.items() if em and v.get("email") == em]
+        dest = ("/mine?em=" + quote(em)) if left else "/"
+        return "<meta http-equiv='refresh' content='4;url=" + dest + "'>" + S + "<h1>Business deleted</h1><p>" + str(escape(name)) + " has been removed. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.</p><p>" + ("Taking you back to your businesses..." if left else "Taking you back to Business Bookie...") + "</p><a href='" + dest + "'>Go now</a>"
+    msg = "Delete " + str(escape(name)) + "? " + str(len(up)) + " upcoming booking(s) will be cancelled and the customers refunded ($" + ("%.2f" % total) + "). This can't be undone."
+    return S + "<h1>Delete business</h1><p><b>" + str(escape(name)) + "</b></p><div style='background:#fde8e8;border:2px solid #e23b3b;border-radius:12px;padding:14px;margin:12px 0'><b>&#9888; This can't be undone.</b><br>" + str(len(up)) + " upcoming booking(s) will be cancelled and <b>refunded</b> ($" + ("%.2f" % total) + "). Customers get an email. Your business and booking link will be removed.</div><form method='post' data-m='" + msg.replace("'", "") + "' onsubmit='return confirm(this.dataset.m)'><input name='pw' type='password' placeholder='Type your password to confirm' required><button style='background:#e23b3b'>Delete my business</button></form><a href='/d/" + sid + "'>Cancel, go back</a>"
 
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
