@@ -270,6 +270,16 @@ from email.message import EmailMessage
 GMAIL = "infinitymichael29@gmail.com"
 GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
 def notify(subject, body, to=None):
+    rk = os.environ.get("RESEND_API_KEY")
+    if rk:
+        try:
+            import json as _j, urllib.request as _u
+            dt = _j.dumps({"from": "Business Bookie <bookings@business-bookie.com>", "to": [to or GMAIL], "subject": subject, "text": body}).encode()
+            rq = _u.Request("https://api.resend.com/emails", data=dt, headers={"Authorization": "Bearer " + rk, "Content-Type": "application/json"})
+            _u.urlopen(rq, timeout=20).read()
+        except Exception as e:
+            print("resend failed:", e)
+        return
     try:
         m = EmailMessage()
         m["Subject"] = subject
