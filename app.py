@@ -1229,8 +1229,8 @@ def _bb_privacy():
 <p>We keep booking records as long as needed to run the service and meet legal and payment requirements. To ask us to delete your information, email us below.</p>
 <h3>Security</h3>
 <p>We use HTTPS and trusted providers to protect your data, but no system is 100% secure.</p>
-<h3>Children</h3>
-<p>Business-Bookie is not intended for children under 13.</p>
+<h3>Age requirement</h3>
+<p>Business-Bookie is intended for users 18 and older. It is not intended for anyone under 18.</p>
 <h3>Changes</h3>
 <p>We may update this policy. The date at the top shows the latest version.</p>
 <h3>Contact</h3>
@@ -1240,7 +1240,7 @@ def _bb_privacy():
 @app.route("/terms")
 def _bb_terms():
     return S + """<h1>Terms &amp; Conditions</h1><p><i>Last updated: October 10, 2026</i></p>
-<p>By using Business-Bookie (business-bookie.com), you agree to these terms.</p>
+<p>By using Business-Bookie (business-bookie.com), you agree to these terms. You must be 18 or older to use Business-Bookie.</p>
 <h3>The service</h3>
 <p>Business-Bookie lets businesses list their services and take bookings, and lets customers book and pay. Each business is responsible for its own services, prices, hours, and for showing up to appointments.</p>
 <h3>Booking and payment</h3>
@@ -1253,8 +1253,28 @@ def _bb_terms():
 <p>Owners must give accurate information, connect a valid payout account through Stripe, keep their login private, and honor the bookings they accept.</p>
 <h3>Acceptable use</h3>
 <p>Don't misuse the site: no fake bookings, fraud, spam, or attempts to break or overload the service. We may suspend accounts that do.</p>
+<h3>We are a booking platform only</h3>
+<p>Business-Bookie only provides software that connects customers with independent businesses. We do not provide, supervise, or guarantee any service a business offers. Each business is solely responsible for its services, staff, premises, pricing, licenses, safety, and conduct. Any dispute about a service is between the customer and the business.</p>
+<h3>Third-party services</h3>
+<p>We rely on outside providers, including Stripe (payments), Twilio (text messages), Resend (email), Neon (database), and Render (hosting). We are not responsible for their errors, outages, or delays, and their own terms apply to your use of them.</p>
+<h3>No warranties</h3>
+<p>The service is provided <b>"as is" and "as available,"</b> without warranties of any kind, express or implied, including fitness for a particular purpose. We don't promise the site will always be available, error-free, or that messages will always be delivered.</p>
 <h3>Limitation of liability</h3>
-<p>Business-Bookie provides the booking platform only and isn't responsible for the services businesses provide. The service is offered "as is," and to the extent the law allows, our liability is limited to the fees we received for the booking in question.</p>
+<p>To the fullest extent the law allows, Business-Bookie and its owner will not be liable for any indirect, incidental, special, consequential, or punitive damages, or for lost profits, data, or business, arising from your use of the service or any service provided by a business. <b>Our total liability for any claim is limited to the greater of the amount you paid for the booking involved or $100.</b></p>
+<h3>Indemnification</h3>
+<p>You agree to defend, indemnify, and hold harmless Business-Bookie and its owner from any claims, losses, damages, and costs (including reasonable attorney fees) arising from your use of the service, your violation of these terms, or, for business owners, the services you provide to customers.</p>
+<h3>Disputes and arbitration</h3>
+<p><b>Informal resolution first:</b> before filing any claim, you agree to email us and try to resolve it informally for at least 30 days.</p>
+<p><b>Binding arbitration:</b> any dispute that isn't resolved informally will be settled by binding individual arbitration administered by the American Arbitration Association under its consumer rules, held in Honolulu, Hawaii, or by video. Either party may instead bring an individual claim in small claims court if it qualifies.</p>
+<p><b>No class actions:</b> you agree to bring claims only in your individual capacity, not as a plaintiff or class member in any class, group, or representative action, and the arbitrator may not combine claims of different people.</p>
+<p><b>Opt-out:</b> you may opt out of arbitration by emailing us within 30 days of first using Business-Bookie.</p>
+<p><b>Time limit:</b> any claim must be brought within one year after it arises, or it is permanently barred.</p>
+<h3>Suspension and termination</h3>
+<p>We may suspend or remove any account or business listing at any time if we believe these terms were violated or the service is being misused.</p>
+<h3>Events beyond our control</h3>
+<p>We are not responsible for delays or failures caused by events beyond our reasonable control, such as outages, natural disasters, or provider failures.</p>
+<h3>General</h3>
+<p>If any part of these terms is found unenforceable, the rest stays in effect. These terms, together with our Privacy Policy, are the entire agreement between you and Business-Bookie. We may transfer these terms if the business changes ownership or structure.</p>
 <h3>Changes</h3>
 <p>We may update these terms. The date at the top shows the latest version.</p>
 <h3>Governing law</h3>
