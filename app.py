@@ -98,7 +98,7 @@ def setup():
 <input type='hidden' name='shop' value='{escape(shop)}'><input type='hidden' name='owner' value='{escape(request.values.get('owner',''))}'><input type='hidden' name='btype' value='{escape(bt)}'><input type='hidden' name='btype' value='{escape(bt)}'>
 {rows}
 <p>Add your own, one per line: name | booking fee</p>
-<input name='addr' placeholder='Business address'>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
+<input name='addr' placeholder='Business address'><input name='bphone' type='tel' placeholder='Business phone (customers can call)' required>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
 <input type='hidden' name='lat' id='glat'><input type='hidden' name='lng' id='glng'><button type='button' onclick='navigator.geolocation.getCurrentPosition(p=>(glat.value=p.coords.latitude,glng.value=p.coords.longitude,this.innerText="Location saved"))'>Use my location</button><p><b>Days you're open:</b></p><label style='margin-right:10px'><input type='checkbox' name='days' value='0' checked style='width:auto'> Mon</label><label style='margin-right:10px'><input type='checkbox' name='days' value='1' checked style='width:auto'> Tue</label><label style='margin-right:10px'><input type='checkbox' name='days' value='2' checked style='width:auto'> Wed</label><label style='margin-right:10px'><input type='checkbox' name='days' value='3' checked style='width:auto'> Thu</label><label style='margin-right:10px'><input type='checkbox' name='days' value='4' checked style='width:auto'> Fri</label><label style='margin-right:10px'><input type='checkbox' name='days' value='5'  style='width:auto'> Sat</label><label style='margin-right:10px'><input type='checkbox' name='days' value='6'  style='width:auto'> Sun</label><p>Opening time</p><input type='time' name='open' value='09:00'><p>Closing time</p><input type='time' name='close' value='17:00'><p>Appointment length</p><select name='slot'><option value='30'>30 minutes</option><option value='60'>1 hour</option><option value='90'>90 minutes</option><option value='120'>2 hours</option></select><button>Create my booking page</button></form>"""
 @app.route("/create", methods=["POST"])
 def create():
@@ -130,7 +130,7 @@ def create():
             svc[n.strip()] = int(p) if p.isdigit() else 0
     if not svc: svc["Appointment"] = 0
     tok = secrets.token_urlsafe(16)
-    d[sid] = {"live": bool(request.form.get("use_acct") == "1"), "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
+    d[sid] = {"live": bool(request.form.get("use_acct") == "1"), "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "bphone": request.form.get("bphone", "").strip()[:30], "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
     save(d)
     notify("New business signed up", request.form["shop"])
     notify("Confirm your business on Business-Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + tok, request.form["email"])
@@ -156,7 +156,7 @@ def book_page(sid):
     else:
         revs = ""
     ow = ("<p><b>with " + str(escape(shop.get("owner", ""))) + "</b></p>") if shop.get("owner") else ""
-    return S + f"""<h1>{escape(shop['name'])}</h1>{ow}<p>Location: {escape(shop.get('addr',''))}</p>{revs}{prices}<p>Book an appointment</p>
+    return S + f"""<h1>{escape(shop['name'])}</h1>{ow}<p>Location: {escape(shop.get('addr',''))}</p>{_bb_phone_html(shop)}{revs}{prices}<p>Book an appointment</p>
 <form method='post' action='/book/{sid}'>
 <input name='name' placeholder='Your name' required>
 <input name='phone' placeholder='Phone number' required><p style='font-size:12px;color:#556;margin:2px 0 8px'>By booking, you agree to receive appointment texts (reminders, confirmations, cancellations) at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. <a href='/privacy'>Privacy</a> &middot; <a href='/terms'>Terms</a></p>
@@ -1159,6 +1159,7 @@ def _bb_edit(sid):
             shop["name"] = f.get("name", "").strip()[:80]
             shop["owner"] = f.get("owner", "").strip()[:80]
             shop["addr"] = f.get("addr", "").strip()[:200]
+            shop["bphone"] = f.get("bphone", "").strip()[:30]
             shop["days"] = f.getlist("days")
             shop["open"] = f.get("open", "09:00")
             shop["close"] = f.get("close", "17:00")
@@ -1181,7 +1182,7 @@ def _bb_edit(sid):
         rows += "<div class='card'><input name='sn" + str(i) + "' value='" + e(n) + "' placeholder='Service name'><input name='sp" + str(i) + "' type='number' step='0.01' min='0' value='" + e(ps) + "' placeholder='Price $'><label style='color:#e23b3b'><input type='checkbox' name='sx" + str(i) + "' value='1' style='width:auto'> Remove this service</label></div>"
     for j in range(len(items), len(items) + 3):
         rows += "<div class='card' style='background:#f7f9ff'><input name='sn" + str(j) + "' placeholder='New service (optional)'><input name='sp" + str(j) + "' type='number' step='0.01' min='0' placeholder='Price $'></div>"
-    return S + "<h1>&#9999;&#65039; Edit customer booking page</h1>" + msg + "<form method='post'><h3>Business info</h3><p>Business name</p><input name='name' value='" + e(shop.get("name", "")) + "' required><p>Your name</p><input name='owner' value='" + e(shop.get("owner", "")) + "'><p>Address</p><input name='addr' value='" + e(shop.get("addr", "")) + "'><h3>Hours</h3><p><b>Days you're open:</b></p>" + dbox + "<p>Opening time</p><input type='time' name='open' value='" + e(shop.get("open", "09:00")) + "'><p>Closing time</p><input type='time' name='close' value='" + e(shop.get("close", "17:00")) + "'><p>Appointment length</p><select name='slot'>" + sopt + "</select><h3>Services &amp; prices</h3>" + rows + "<button>Save changes</button></form><p><a href='/b/" + sid + "'>&#128064; Preview my page</a></p><a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
+    return S + "<h1>&#9999;&#65039; Edit customer booking page</h1>" + msg + "<form method='post'><h3>Business info</h3><p>Business name</p><input name='name' value='" + e(shop.get("name", "")) + "' required><p>Your name</p><input name='owner' value='" + e(shop.get("owner", "")) + "'><p>Address</p><input name='addr' value='" + e(shop.get("addr", "")) + "'>" + _bb_bphone_in(shop) + "<h3>Hours</h3><p><b>Days you're open:</b></p>" + dbox + "<p>Opening time</p><input type='time' name='open' value='" + e(shop.get("open", "09:00")) + "'><p>Closing time</p><input type='time' name='close' value='" + e(shop.get("close", "17:00")) + "'><p>Appointment length</p><select name='slot'>" + sopt + "</select><h3>Services &amp; prices</h3>" + rows + "<button>Save changes</button></form><p><a href='/b/" + sid + "'>&#128064; Preview my page</a></p><a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
 
 
 def _bb_me():
@@ -1282,6 +1283,18 @@ def _bb_terms():
 <h3>Contact</h3>
 <p><a href='mailto:""" + _BB_CONTACT + "'>" + _BB_CONTACT + """</a></p>
 <p><a href='/privacy'>Privacy Policy</a> &middot; <a href='/'>Home</a></p>"""
+
+def _bb_phone_html(shop):
+    p = (shop.get("bphone") or "").strip()
+    if not p:
+        return ""
+    d = "".join(c for c in p if c.isdigit() or c == "+")
+    return "<p>Phone: <a href='tel:" + str(escape(d)) + "'>" + str(escape(p)) + "</a></p>"
+
+
+def _bb_bphone_in(shop):
+    return "<p>Business phone</p><input name='bphone' type='tel' placeholder='(808) 555-1234' value='" + str(escape(shop.get("bphone", ""))) + "'>"
+
 
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
