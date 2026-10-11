@@ -67,12 +67,12 @@ body{margin:0;font-family:system-ui,Arial;background:#1a6dff;color:#fff;text-ali
 </style></head><body>
 <div class="wrap">
 <div class="cal">&#128197;</div>
-<div class="logo">Business Bookie</div>
+<div class="logo">Business-Bookie</div>
 <div class="head">Sign up your business for free</div>
 <div class="sub">Your own booking page in minutes.</div>
-<a class="btn" href="/new">Get Started</a><div style="margin-top:20px"><a href="/find" style="color:#fff;font-size:17px;text-decoration:underline">Book a business &#8594;</a></div>
+<div style='margin:18px 0 6px'><div style='color:#fff;font-size:15px;margin:6px 0 8px'>For customers</div><a href='/find' style='display:block;box-sizing:border-box;width:100%;max-width:340px;margin:0 auto 14px;padding:14px;background:#fff;color:#1a6dff;border:2px solid #1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)'>&#128197; Book an appointment</a><div style='color:#fff;font-size:15px;margin:6px 0 8px'>New to Business-Bookie?</div><a href='/new' style='display:block;box-sizing:border-box;width:100%;max-width:340px;margin:0 auto 14px;padding:14px;background:#fff;color:#1a6dff;border:2px solid #1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)'>&#127970; Sign up my business</a><div style='color:#fff;font-size:15px;margin:6px 0 8px'>Already have a business?</div><a href='/login' style='display:block;box-sizing:border-box;width:100%;max-width:340px;margin:0 auto 14px;padding:14px;background:#fff;color:#1a6dff;border:2px solid #1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)'>&#128273; Log in to check bookings</a></div>
 <div class="benes">&#9989; Your own booking link<br>&#9989; Get paid up front<br>&#9989; No more DMs</div>
-<div class="trust">Free business signup &middot; No credit card needed</div><div style='margin-top:14px'><a href='/login' style='color:#fff;font-size:15px;text-decoration:underline'>Already have a business? Log in to check bookings</a></div>
+<div class="trust">Free business signup &middot; No credit card needed</div><div style='margin-top:14px'></div>
 </div>
 </body></html>
 """)
@@ -83,7 +83,7 @@ def new():
     opts = "".join(f"<option>{t}</option>" for t in TEMPLATES)
     return S + f"""<h1>Set up your business</h1>
 <form method='post' action='/setup'>
-<input name='shop' placeholder='Business name' required><input name='owner' placeholder='Your name' required>
+<input name='shop' placeholder='Business name' required>{_bb_owner_input()}
 <p>What kind of business?</p>
 <select name='btype'>{opts}</select>
 <button>Next</button></form>"""
@@ -98,10 +98,22 @@ def setup():
 <input type='hidden' name='shop' value='{escape(shop)}'><input type='hidden' name='owner' value='{escape(request.values.get('owner',''))}'><input type='hidden' name='btype' value='{escape(bt)}'><input type='hidden' name='btype' value='{escape(bt)}'>
 {rows}
 <p>Add your own, one per line: name | booking fee</p>
-<input name='addr' placeholder='Business address'><input name='email' placeholder='Your email (we send a confirm link)' type='email' required><input name='pw' type='password' placeholder='Create a password' required><textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
+<input name='addr' placeholder='Business address'>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
 <input type='hidden' name='lat' id='glat'><input type='hidden' name='lng' id='glng'><button type='button' onclick='navigator.geolocation.getCurrentPosition(p=>(glat.value=p.coords.latitude,glng.value=p.coords.longitude,this.innerText="Location saved"))'>Use my location</button><p><b>Days you're open:</b></p><label style='margin-right:10px'><input type='checkbox' name='days' value='0' checked style='width:auto'> Mon</label><label style='margin-right:10px'><input type='checkbox' name='days' value='1' checked style='width:auto'> Tue</label><label style='margin-right:10px'><input type='checkbox' name='days' value='2' checked style='width:auto'> Wed</label><label style='margin-right:10px'><input type='checkbox' name='days' value='3' checked style='width:auto'> Thu</label><label style='margin-right:10px'><input type='checkbox' name='days' value='4' checked style='width:auto'> Fri</label><label style='margin-right:10px'><input type='checkbox' name='days' value='5'  style='width:auto'> Sat</label><label style='margin-right:10px'><input type='checkbox' name='days' value='6'  style='width:auto'> Sun</label><p>Opening time</p><input type='time' name='open' value='09:00'><p>Closing time</p><input type='time' name='close' value='17:00'><p>Appointment length</p><select name='slot'><option value='30'>30 minutes</option><option value='60'>1 hour</option><option value='90'>90 minutes</option><option value='120'>2 hours</option></select><button>Create my booking page</button></form>"""
 @app.route("/create", methods=["POST"])
 def create():
+    if request.form.get("use_acct") == "1":
+        _me = _bb_me()
+        if not _me:
+            return S + "<h1>Please log in again</h1><a href='/login'>Log in</a>"
+        from werkzeug.datastructures import ImmutableMultiDict
+        _f = request.form.to_dict(flat=False)
+        _f["email"] = [_me["email"]]
+        _f["pw"] = [_me["pw"]]
+        _f["pw2"] = [_me["pw"]]
+        request.form = ImmutableMultiDict([(k, v) for k, vs in _f.items() for v in vs])
+    if request.form.get("pw2") is not None and request.form.get("pw2") != request.form.get("pw", ""):
+        return S + "<h1>Passwords don't match</h1><p>Go back and type the same password in both boxes.</p><a href='javascript:history.back()'>Go back</a>"
     d = load()
     sid = re.sub(r"[^a-z0-9]+", "-", request.form["shop"].lower()).strip("-") or "shop"
     base, i = sid, 2
@@ -118,10 +130,10 @@ def create():
             svc[n.strip()] = int(p) if p.isdigit() else 0
     if not svc: svc["Appointment"] = 0
     tok = secrets.token_urlsafe(16)
-    d[sid] = {"live": False, "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
+    d[sid] = {"live": bool(request.form.get("use_acct") == "1"), "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
     save(d)
     notify("New business signed up", request.form["shop"])
-    notify("Confirm your business on Business Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + tok, request.form["email"])
+    notify("Confirm your business on Business-Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + tok, request.form["email"])
     _bb_sess["own_" + sid] = True
     return redirect("/done/" + sid)
 @app.route("/b/<sid>")
@@ -167,6 +179,8 @@ def book(sid):
     shop = d[sid]
     s = request.form["service"]
     fee = shop["services"].get(s, 0)
+    if request.form.get("when", "") in {x.get("when") for x in shop.get("bookings", [])} or _bb_blocked(shop, request.form.get("when", "")):
+        return _bb_taken(sid, shop)
     if not request.form.get("email"):
         return S + "<h1>Please enter your email</h1><p>We send your booking link there.</p><a href='/b/" + sid + "'>Back</a>"
     if not request.form.get("agree"):
@@ -215,6 +229,8 @@ def dash(sid):
     ref = "<meta http-equiv='refresh' content='30;url=/d/" + sid + "?pw=" + quote(pw) + "'>"
     head = "<meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;font-family:system-ui,Arial;background:#eef3ff}.top{background:#1a6dff;color:#fff;padding:22px 18px}.top h1{margin:0;font-size:26px}.top p{margin:4px 0 0;opacity:.9}.wrap{padding:16px;max-width:460px;margin:auto}.card{background:#fff;padding:16px;border-radius:14px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08)}.big{font-size:34px;font-weight:800;color:#1a6dff}a{color:#1a6dff}.note{background:#fff3cd}</style>"
     note = "" if shop.get("live", True) else "<div class='card note'><b>&#9888; Confirm your email to go live.</b> Your business won't show in the directory until you tap the link we emailed you. Check spam too.<br><a href='/resend/" + sid + "' style='display:inline-block;margin-top:8px;font-weight:700'>Resend confirm link</a></div>"
+    if not shop.get("payouts_on"): note += "<div class='card note'><b>&#9888; Connect payments to go live.</b> Customers can't find or book you in the directory until payments are set up. Use the Connect payments button below.</div>"
+    for _x in shop.get("dbl", []): note += "<div class='card' style='background:#fde8e8;border-left:6px solid #e23b3b'><b>&#9888; Double-booking caught</b><br>" + escape(_x.get("name", "")) + " tried to book " + escape(_x.get("service", "")) + " at " + escape(_x.get("when", "")) + ", a time already taken. They were refunded in full, so you are <b>not</b> double-booked.<br><a href='/dbl/" + sid + "' style='display:inline-block;margin-top:8px;font-weight:700;color:#e23b3b'>Got it, dismiss</a></div>"
     if bk:
         rows = "".join("<div class='card'><b>" + escape(x['name']) + "</b> - " + escape(x['service']) + "<br>" + escape(x['when']) + "<br>" + escape(x['phone']) + " - fee $" + str(x.get('fee', x.get('deposit', 0))) + "</div>" for x in reversed(bk))
     else:
@@ -249,7 +265,8 @@ def dash(sid):
         return "<h3 style='color:" + clr + "'>" + title + " (" + str(len(items)) + ")</h3>" + ("".join(_card(x, extra(x), clr) for x in items) if items else "<div class='card' style='color:#777'>" + empty + "</div>")
     _btn = lambda x: "<form method='post' action='/ns/" + sid + "/" + x["rt"] + "' style='margin-top:8px'><button name='a' value='showed'>Showed up &#10003;</button> <button name='a' value='noshow' onclick=\"return confirm('Mark as no-show? They will NOT get a refund.')\">Mark no-show</button></form><a href='/ns/" + sid + "/" + x["rt"] + "'>Reschedule</a>"
     rows = ""
-    if _due: rows += _sec("&#9888; Did they show up?", _due, "", _btn, "#f0a500")
+    toprows = ""
+    if _due: toprows += _sec("&#9888; Did they show up?", _due, "", _btn, "#f0a500")
     rows += _sec("Upcoming", _up, "No upcoming appointments.", clr="#1a6dff")
     rows += _sec("Completed", _dn, "None yet.", clr="#1faa59")
     rows += _sec("No-shows", _ns, "None. Nice!", clr="#e23b3b")
@@ -262,7 +279,7 @@ def dash(sid):
         pay = "<div class='card note'><b>Payment setup not finished</b><a style='" + cb + "' href='/connect/" + sid + pq + "'>Finish payment setup</a></div>"
     else:
         pay = "<div class='card'><b>Get paid online</b><br>Connect your bank so customers can pay when they book. Takes a few minutes.<a style='" + cb + "' href='/connect/" + sid + pq + "'>Connect payments</a></div>"
-    body = ref + head + "<div class='top'><h1>" + escape(shop['name']) + "</h1><p>Your dashboard</p><a href='/' style='color:#fff;font-weight:700;text-decoration:none'>&#127968; Home</a></div><div class='wrap'>" + note + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/b/" + sid + "' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>Book an appointment</a></div>" + pay + rows + "<div class='card'><a href='/b/" + sid + "'>View my public page</a> | <a href='/mine?em=" + quote(shop.get('email','')) + "&pw=" + quote(pw) + "'>All my businesses</a> | <a href='/pw/" + sid + "'>Change password</a> | <a href='/logout'>Log out</a> | <a href='/del/" + sid + "' style='color:#d33'>Delete business</a></div></div>"
+    body = ref + head + "<div class='top' style='text-align:center;position:relative;padding-top:56px'><a href='/mine?em=" + quote(shop.get('email','')) + "' style='position:absolute;top:14px;left:14px;background:#fff;color:#1a6dff;font-weight:700;text-decoration:none;padding:8px 14px;border-radius:8px'>&#127970; All my businesses</a><h1>" + escape(shop['name']) + "</h1></div><div class='wrap'>" + note + toprows + "<h3>Upcoming</h3>" + _bb_uptiles(_up) + "<h3>&#128197; This month</h3>" + _bb_month(shop, sid) + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/edit/" + sid + "' style='flex:1;min-width:40%;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#9999;&#65039; Edit customer booking page</a><a href='/block/" + sid + "' style='flex:1;min-width:40%;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#9940; Block off time</a><a href='/del/" + sid + "' style='flex-basis:100%;text-align:center;border:2px solid #e23b3b;color:#e23b3b;padding:10px;border-radius:10px;text-decoration:none;font-weight:700;margin-top:6px'>Delete business</a></div>" + pay + rows + "<div class='card'><a href='/pw/" + sid + "'>Change password</a> | <a href='/logout'>Log out</a></div></div>"
     return body.replace("<", chr(60)).replace(">", chr(62))
 
 import smtplib
@@ -274,7 +291,7 @@ def notify(subject, body, to=None):
     if rk:
         try:
             import json as _j, urllib.request as _u
-            dt = _j.dumps({"from": "Business Bookie <bookings@business-bookie.com>", "to": [to or GMAIL], "subject": subject, "text": body}).encode()
+            dt = _j.dumps({"from": "Business-Bookie <bookings@business-bookie.com>", "to": [to or GMAIL], "subject": subject, "text": body}).encode()
             rq = _u.Request("https://api.resend.com/emails", data=dt, headers={"Authorization": "Bearer " + rk, "Content-Type": "application/json", "User-Agent": "BusinessBookie/1.0"})
             _u.urlopen(rq, timeout=20).read()
         except Exception as e:
@@ -295,7 +312,7 @@ def notify(subject, body, to=None):
 @app.route("/c/<cat>")
 def category(cat):
     d = load()
-    rows = "".join(f"<a href='/b/{sid}' style='text-decoration:none'><div class='card'><b>{escape(v['name'])}</b><br>{escape(v.get('addr',''))}</div></a>" for sid, v in d.items() if v.get("type", "Other") == cat and v.get("live", True))
+    rows = "".join(f"<a href='/b/{sid}' style='text-decoration:none'><div class='card'><b>{escape(v['name'])}</b><br>{escape(v.get('addr',''))}</div></a>" for sid, v in d.items() if v.get("type", "Other") == cat and _bb_listed(v))
     return S + f"<h1>{escape(cat)}</h1>" + (rows or "<p>None yet.</p>") + "<a href='/'>Back</a>"
 @app.route("/confirm/<sid>/<tok>")
 def confirm(sid, tok):
@@ -305,7 +322,7 @@ def confirm(sid, tok):
         save(d)
         b1 = "display:block;background:#1a6dff;color:#fff;padding:14px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
         b2 = "display:block;border:2px solid #1a6dff;color:#1a6dff;padding:12px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
-        return "<meta http-equiv='refresh' content='4;url=/d/" + sid + "'>" + S + "<h1>&#127881; You're live!</h1><p><b>" + str(escape(d[sid].get("name", ""))) + "</b> now shows in the Business Bookie directory. Customers can find and book you.</p><p>Taking you to your dashboard...</p><a style='" + b1 + "' href='/d/" + sid + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a>"
+        return "<meta http-equiv='refresh' content='4;url=/d/" + sid + "'>" + S + "<h1>&#127881; You're live!</h1><p><b>" + str(escape(d[sid].get("name", ""))) + "</b> is confirmed! " + ("It now shows in the Business-Bookie directory." if d[sid].get("payouts_on") else "Last step: connect payments on your dashboard so customers can find and book you.") + "</p><p>Taking you to your dashboard...</p><a style='" + b1 + "' href='/d/" + sid + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a>"
     return S + "<h1>Link not valid</h1>", 404
 @app.route("/find")
 def find():
@@ -313,7 +330,7 @@ def find():
     d = load()
     counts = {}
     for v in d.values():
-        if not v.get("live", True): continue
+        if not _bb_listed(v): continue
         k = v.get("type", "Other")
         counts[k] = counts.get(k, 0) + 1
     cats = "".join(f"<a href='/c/{quote(k)}' style='text-decoration:none'><div class='card'><b>{escape(k)}</b> - {n} businesses</div></a>" for k, n in [(k, counts.get(k, 0)) for k in TEMPLATES])
@@ -322,7 +339,7 @@ def find():
 def search():
     d = load()
     q = request.args.get("q", "").lower()
-    rows = "".join(f"<a href='/b/{sid}' style='text-decoration:none'><div class='card'><b>{escape(v['name'])}</b><br>{escape(v.get('type',''))} - {escape(v.get('addr',''))}</div></a>" for sid, v in d.items() if v.get("live", True) and (q in v['name'].lower() or q in v.get('type','').lower()))
+    rows = "".join(f"<a href='/b/{sid}' style='text-decoration:none'><div class='card'><b>{escape(v['name'])}</b><br>{escape(v.get('type',''))} - {escape(v.get('addr',''))}</div></a>" for sid, v in d.items() if _bb_listed(v) and (q in v['name'].lower() or q in v.get('type','').lower()))
     return S + f"<h1>Results for '{escape(q)}'</h1>" + (rows or "<p>Nothing found.</p>") + "<a href='/find'>Back</a>"
 @app.route("/near")
 def near():
@@ -334,7 +351,7 @@ def near():
         return S + "<h1>Location not available</h1><a href='/find'>Back</a>"
     out = []
     for sid, v in d.items():
-        if not v.get("live", True): continue
+        if not _bb_listed(v): continue
         try:
             bl = float(v.get("lat")); bg = float(v.get("lng"))
         except Exception:
@@ -366,10 +383,21 @@ def mine():
     pw = request.args.get("pw", "")
     owned = [(sid, v) for sid, v in d.items() if em and v.get("email") == em and (pw and v.get("pw") == pw or _bb_sess.get("own_" + sid))]
     if not owned: return redirect("/login")
-    if len(owned) == 1: return redirect("/d/" + owned[0][0] + "?pw=" + quote(pw))
     head = "<meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;font-family:system-ui,Arial;background:#eef3ff}.top{background:#1a6dff;color:#fff;padding:22px 18px}.top h1{margin:0;font-size:26px}.wrap{padding:16px;max-width:460px;margin:auto}.card{display:block;background:#fff;padding:16px;border-radius:14px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08);color:#123;text-decoration:none}a{color:#1a6dff}</style>"
-    rows = "".join("<a class='card' style='border-left:6px solid " + ("#1faa59" if v.get("live", True) else "#f0a500;background:#fff8e1") + "' href='/d/" + sid + "?pw=" + quote(pw) + "'><b>" + escape(v['name']) + "</b> " + ("<span style='color:#1faa59;font-weight:700'>&#9679; Live</span>" if v.get("live", True) else "<span style='color:#b37400;font-weight:700'>&#9888; Needs email confirmation</span>") + "<br>" + escape(v.get('type','')) + " - " + str(len(v.get('bookings',[]))) + " bookings</a>" for sid, v in owned)
-    return head + "<div class='top'><h1>My businesses</h1></div><div class='wrap'>" + rows + "<a href='/new'>+ Add another business</a> | <a href='/logout'>Log out</a></div>"
+    _now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+    _bs = "flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:8px;border-radius:8px;text-decoration:none;font-weight:700"
+    _num = "font-size:26px;font-weight:800;color:#1a6dff"
+    def _card(sid, v):
+        bk = v.get("bookings", [])
+        up = len([b for b in bk if str(b.get("when", "")) >= _now])
+        ok = _bb_listed(v)
+        tag = "<span style='color:#1faa59;font-weight:700'>&#9679; Live</span>" if ok else ("<span style='color:#b37400;font-weight:700'>&#9888; Needs email confirmation</span>" if not v.get("live", True) else "<span style='color:#b37400;font-weight:700'>&#9888; Needs payments connected</span>")
+        return "<div class='card' style='border-left:6px solid " + ("#1faa59" if ok else "#f0a500;background:#fff8e1") + "'><b style='font-size:18px'>" + escape(v.get("name", "")) + "</b> " + tag + "<br><span style='color:#667'>" + escape(v.get("type", "")) + "</span><div style='display:flex;gap:24px;margin:10px 0'><div><div style='" + _num + "'>" + str(up) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(len(bk)) + "</div>total bookings</div></div><div style='display:flex;gap:8px'><a style='" + _bs + "' href='/d/" + sid + "?pw=" + quote(pw) + "'>Open</a></div></div>"
+    rows = "".join(_card(sid, v) for sid, v in owned)
+    _tu = sum(len([b for b in v.get("bookings", []) if str(b.get("when", "")) >= _now]) for _, v in owned)
+    _tb = sum(len(v.get("bookings", [])) for _, v in owned)
+    summ = "<div class='card' style='display:flex;justify-content:space-around;text-align:center'><div><div style='" + _num + "'>" + str(len(owned)) + "</div>businesses</div><div><div style='" + _num + "'>" + str(_tu) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(_tb) + "</div>total bookings</div></div>"
+    return head + "<div class='top' style='text-align:center'><h1>My businesses</h1></div><div class='wrap'>" + summ + rows + "<div style='display:flex;gap:10px;margin-top:12px'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/find' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#128269; Find a business</a></div><p style='text-align:center'><a href='/logout'>Log out</a></p></div>"
 
 
 import os, secrets as _bb_secrets
@@ -429,7 +457,7 @@ def forgot():
             save(d)
             link = request.host_url.rstrip("/") + "/reset/" + tok
             try:
-                notify("Business Bookie - reset your password", "Tap this link to set a new password (works for 1 hour):\n\n" + link, to=em)
+                notify("Business-Bookie - reset your password", "Tap this link to set a new password (works for 1 hour):\n\n" + link, to=em)
             except Exception as ex:
                 print("RESET EMAIL FAILED:", ex)
         return S + "<h1>Check your email</h1><p>If that email has an account, we sent a reset link. It works for 1 hour.</p><a href='/login'>Back to log in</a>"
@@ -474,6 +502,20 @@ def paid(sid):
     import secrets
     ex = [b for b in shop["bookings"] if b.get("paid_id") == info["id"]]
     rt = ex[0].get("rt", "") if ex else secrets.token_urlsafe(8)
+    if not ex and m.get("when") in {x.get("when") for x in shop["bookings"]}:
+        try:
+            import stripe as _s
+            _s.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+            kw = {"payment_intent": _bb_g(info, "payment_intent")}
+            if shop.get("acct") and shop.get("payouts_on"):
+                kw["reverse_transfer"] = True
+                kw["refund_application_fee"] = True
+            _s.Refund.create(**kw)
+        except Exception as e:
+            print("double-book refund failed:", e)
+        shop.setdefault("dbl", []).append({"name": m.get("name", ""), "service": m.get("service", ""), "when": m.get("when", "")})
+        save(d)
+        return S + "<h1>Sorry, that time was just taken</h1><p>Someone booked it a moment before you. You've been refunded in full. It can take 5 to 10 business days to show on your card.</p><a href='/b/" + sid + "'>Pick another time</a>"
     if not ex:
         shop["bookings"].append({"name": m["name"], "phone": m["phone"], "service": m["service"], "when": m["when"], "fee": fee, "paid": True, "paid_id": info["id"], "rt": rt, "email": m.get("email", ""), "pi": _bb_g(info, "payment_intent"), "keep": (_bb_pi(shop, fee).get("payment_intent_data") or {}).get("application_fee_amount")})
         save(d)
@@ -529,6 +571,8 @@ def _bb_manage(sid, rt):
         save(d)
         try:
             notify("Booking CANCELLED at " + shop["name"], b.get("name", "") + " - " + b.get("service", "") + " - " + b.get("when", "") + " - refunded $" + amt_s, shop.get("email") or GMAIL)
+            if b.get("email"):
+                notify("Your booking at " + shop["name"] + " is cancelled", "Hi " + b.get("name", "") + ",\n\nYour " + b.get("service", "") + " at " + shop["name"] + " on " + b.get("when", "") + " has been cancelled.\n\nRefund: $" + amt_s + ". It can take 5 to 10 business days to show on your card.\n\nWant to book again? " + request.host_url + "b/" + sid, b["email"])
         except Exception:
             pass
         return S + "<h1>Booking cancelled</h1><p>You'll be refunded $" + amt_s + ". It can take 5 to 10 business days to show on your card.</p><a href='/b/" + sid + "'>Back</a>"
@@ -634,7 +678,7 @@ def setup_done(sid):
     dl = "/d/" + sid + "?pw=" + quote(request.args.get("pw", ""))
     b1 = "display:block;background:#1a6dff;color:#fff;padding:14px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
     b2 = "display:block;border:2px solid #1a6dff;color:#1a6dff;padding:12px;border-radius:12px;text-decoration:none;text-align:center;margin:12px 0;font-weight:700"
-    return S + "<h1>You're all set!</h1><p><b>" + str(escape(d[sid]["name"])) + "</b> is ready.</p><div style='background:#fff3cd;border:2px solid #f0a500;border-radius:12px;padding:14px;margin:12px 0'><b>&#9888; One last step:</b> we emailed a confirm link from bookings@business-bookie.com. Tap it so your business shows up in the directory. Check your spam folder if you don't see it.</div><a style='" + b1 + "' href='" + dl + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a><a style='" + b2 + "' href='/'>Back to home</a>"
+    return S + "<h1>You're all set!</h1><p><b>" + str(escape(d[sid]["name"])) + "</b> is ready.</p><div style='background:#fff3cd;border:2px solid #f0a500;border-radius:12px;padding:14px;margin:12px 0'><b>&#9888; Two steps to go live:</b><br>1. Tap the confirm link we emailed from bookings@business-bookie.com (check spam).<br>2. Connect payments (tap the blue button below, takes a few minutes).<br>Customers can find and book you once both are done.</div><a style='" + b1 + "' href='/connect/" + sid + "?pw=" + quote(request.args.get("pw", "")) + "'>&#128179; Connect payments now</a><a style='" + b2 + "' href='" + dl + "'>Go to my dashboard</a><a style='" + b2 + "' href='/b/" + sid + "'>See my booking page</a><a style='" + b2 + "' href='/'>Back to home</a>"
 
 
 def _bb_save(d):
@@ -800,7 +844,7 @@ def _bb_resend(sid):
         return S + "<h1>Not found</h1>", 404
     if shop.get("live", True):
         return S + "<h1>Already confirmed</h1><p>Your business is live.</p><a href='/d/" + sid + "'>Back to dashboard</a>"
-    notify("Confirm your business on Business Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + shop.get("token", ""), shop.get("email"))
+    notify("Confirm your business on Business-Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + shop.get("token", ""), shop.get("email"))
     return S + "<h1>Sent!</h1><p>We sent a new confirm link to " + str(escape(shop.get("email", ""))) + ". Check your inbox and spam folder.</p><a href='/d/" + sid + "'>Back to dashboard</a>"
 
 
@@ -838,17 +882,332 @@ def _bb_delete(sid):
                 b["full_refund"] = True
         for b in up:
             if b.get("email"):
-                notify("Your booking at " + name + " was cancelled", "Sorry! " + name + " has closed on Business Bookie, so your " + b.get("service", "") + " on " + b.get("when", "") + " is cancelled." + (" You will be refunded. It can take 5 to 10 business days to show on your card." if b.get("pi") else ""), b["email"])
-        notify("Business deleted: " + name, "Your business was removed from Business Bookie. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.", shop.get("email") or GMAIL)
+                notify("Your booking at " + name + " was cancelled", "Sorry! " + name + " has closed on Business-Bookie, so your " + b.get("service", "") + " on " + b.get("when", "") + " is cancelled." + (" You will be refunded. It can take 5 to 10 business days to show on your card." if b.get("pi") else ""), b["email"])
+        notify("Business deleted: " + name, "Your business was removed from Business-Bookie. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.", shop.get("email") or GMAIL)
         del d[sid]
         save(d)
         _bb_sess.pop("own_" + sid, None)
         em = shop.get("email", "")
         left = [k for k, v in d.items() if em and v.get("email") == em]
         dest = ("/mine?em=" + quote(em)) if left else "/"
-        return "<meta http-equiv='refresh' content='4;url=" + dest + "'>" + S + "<h1>Business deleted</h1><p>" + str(escape(name)) + " has been removed. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.</p><p>" + ("Taking you back to your businesses..." if left else "Taking you back to Business Bookie...") + "</p><a href='" + dest + "'>Go now</a>"
+        return "<meta http-equiv='refresh' content='4;url=" + dest + "'>" + S + "<h1>Business deleted</h1><p>" + str(escape(name)) + " has been removed. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.</p><p>" + ("Taking you back to your businesses..." if left else "Taking you back to Business-Bookie...") + "</p><a href='" + dest + "'>Go now</a>"
     msg = "Delete " + str(escape(name)) + "? " + str(len(up)) + " upcoming booking(s) will be cancelled and the customers refunded ($" + ("%.2f" % total) + "). This can't be undone."
     return S + "<h1>Delete business</h1><p><b>" + str(escape(name)) + "</b></p><div style='background:#fde8e8;border:2px solid #e23b3b;border-radius:12px;padding:14px;margin:12px 0'><b>&#9888; This can't be undone.</b><br>" + str(len(up)) + " upcoming booking(s) will be cancelled and <b>refunded</b> ($" + ("%.2f" % total) + "). Customers get an email. Your business and booking link will be removed.</div><form method='post' data-m='" + msg.replace("'", "") + "' onsubmit='return confirm(this.dataset.m)'><input name='pw' type='password' placeholder='Type your password to confirm' required><button style='background:#e23b3b'>Delete my business</button></form><a href='/d/" + sid + "'>Cancel, go back</a>"
+
+def _bb_save(d):
+    return save(d)
+
+
+@app.after_request
+def _bb_homebar(resp):
+    try:
+        if resp.status_code != 200 or not (resp.mimetype or "").startswith("text/html") or request.path.startswith("/d/") or request.path.startswith("/mine") or request.headers.get("Sec-Fetch-Dest") == "iframe":
+            return resp
+        own = [k[4:] for k in list(_bb_sess.keys()) if k.startswith("own_") and _bb_sess.get(k)]
+        if not own:
+            return resp
+        if True:
+            d = load()
+            em = next((d[s].get("email", "") for s in own if s in d), "")
+            href = ("/mine?em=" + quote(em)) if em else "/d/" + own[0]
+        _lab = "&#127970; All my businesses"
+        _p = request.path.split("/")
+        if len(_p) > 2 and _p[1] in ("edit", "cal", "block", "del", "pw") and _p[2] in own:
+            href = "/d/" + _p[2]
+            _lab = "&#8592; Back"
+        bar = "<div style='position:sticky;top:0;z-index:999;background:#1a6dff;padding:10px 14px;display:flex;justify-content:space-between;font-family:system-ui,Arial;margin:-16px -16px 12px'><a href='" + href + "' style='background:#fff;color:#1a6dff;font-weight:700;text-decoration:none;padding:8px 14px;border-radius:8px'>" + _lab + "</a><a href='/logout' style='background:rgba(255,255,255,.2);color:#fff;font-weight:700;text-decoration:none;padding:8px 14px;border-radius:8px'>Log out</a></div>"
+        resp.set_data(bar + resp.get_data(as_text=True))
+    except Exception:
+        pass
+    return resp
+
+def _bb_listed(v):
+    return bool(v.get("live", True) and v.get("payouts_on"))
+
+
+def _bb_taken(sid, shop):
+    sl = build_slots(shop)
+    if not sl:
+        return S + "<h1>Sorry, that time was just taken</h1><p>You have <b>not</b> been charged. There are no other open times right now.</p><a href='/b/" + sid + "'>Back</a>"
+    h = "".join("<input type='hidden' name='" + k + "' value='" + str(escape(request.form.get(k, ""))) + "'>" for k in ("name", "phone", "email", "service", "agree"))
+    opts = "".join("<option value='" + str(escape(v)) + "'>" + str(escape(lab)) + "</option>" for v, lab in sl)
+    return S + "<h1>Sorry, that time was just taken</h1><p>Someone booked it a moment ago. You have <b>not</b> been charged. Pick another time:</p><form method='post' action='/book/" + sid + "'>" + h + "<select name='when' required>" + opts + "</select><button>Book this time</button></form><a href='/b/" + sid + "'>Start over</a>"
+
+
+@app.route("/dbl/<sid>")
+def _bb_dbl_clear(sid):
+    d = load()
+    if sid in d and _bb_sess.get("own_" + sid):
+        d[sid].pop("dbl", None)
+        save(d)
+    return redirect("/d/" + sid)
+
+
+def _bb_blocked(shop, when):
+    try:
+        day, tm = when.split(" ")
+    except Exception:
+        return False
+    for b in shop.get("blocks", []):
+        if b.get("date") != day:
+            continue
+        if not b.get("start") or not b.get("end"):
+            return True
+        if b["start"] <= tm < b["end"]:
+            return True
+    return False
+
+_bb_build_slots_orig = build_slots
+def build_slots(shop):
+    return [(v, lab) for v, lab in _bb_build_slots_orig(shop) if not _bb_blocked(shop, v)]
+
+@app.route("/block/<sid>", methods=["GET", "POST"])
+def _bb_block(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return S + "<h1>Not found</h1>", 404
+    if not _bb_sess.get("own_" + sid):
+        return redirect("/d/" + sid)
+    today = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d")
+    if request.method == "POST":
+        if request.form.get("act") == "del":
+            try:
+                shop.get("blocks", []).pop(int(request.form.get("i", "-1")))
+            except Exception:
+                pass
+        else:
+            dt = request.form.get("date", "")
+            st = request.form.get("start", "")
+            en = request.form.get("end", "")
+            if not dt or dt < today:
+                return S + "<h1>Pick a date from today on</h1><a href='/block/" + sid + "'>Back</a>"
+            if (st or en) and not (st and en and st < en):
+                return S + "<h1>For a time range, set both times and make the end later than the start</h1><p>Or leave both blank to block the whole day.</p><a href='/block/" + sid + "'>Back</a>"
+            shop.setdefault("blocks", []).append({"date": dt, "start": st, "end": en, "why": request.form.get("why", "")[:60]})
+        shop["blocks"] = [b for b in shop.get("blocks", []) if b.get("date", "") >= today]
+        save(d)
+        return redirect("/block/" + sid)
+    rows = ""
+    for i, b in enumerate(shop.get("blocks", [])):
+        if b.get("date", "") < today:
+            continue
+        span = (b["start"] + " - " + b["end"]) if b.get("start") else "Whole day"
+        rows += "<div class='card' style='border-left:6px solid #e23b3b'><b>" + str(escape(b["date"])) + "</b> &middot; " + span + ("<br>" + str(escape(b["why"])) if b.get("why") else "") + "<form method='post' style='margin:6px 0 0'><input type='hidden' name='act' value='del'><input type='hidden' name='i' value='" + str(i) + "'><button style='background:#e23b3b;padding:8px'>Remove</button></form></div>"
+    return S + "<h1>&#9940; Block off time</h1><p>Customers can't book blocked times.</p><form method='post'><p><b>Date</b></p><input type='date' name='date' min='" + today + "' required><p><b>From / to</b> (leave both blank to block the whole day)</p><input type='time' name='start'><input type='time' name='end'><input name='why' placeholder='Note (optional) e.g. Lunch, Vacation'><button>Block it</button></form><h3>Upcoming blocks</h3>" + (rows or "<p>No blocked time yet.</p>") + "<a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
+
+
+@app.route("/cal/<sid>")
+def _bb_cal(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return S + "<h1>Not found</h1>", 404
+    if not _bb_sess.get("own_" + sid):
+        return redirect("/d/" + sid)
+    try:
+        w = int(request.args.get("w", "0"))
+    except Exception:
+        w = 0
+    e = lambda s: str(escape(s))
+    today = (datetime.utcnow() - timedelta(hours=10)).date()
+    start = today + timedelta(days=7 * w)
+    open_days = [int(x) for x in shop.get("days", [])] or [0, 1, 2, 3, 4]
+    out = ""
+    for i in range(7):
+        day = start + timedelta(days=i)
+        ds = day.strftime("%Y-%m-%d")
+        items = []
+        for b in shop.get("bookings", []):
+            if str(b.get("when", "")).startswith(ds):
+                tm = str(b.get("when", ""))[11:16]
+                items.append((tm, "<div style='border-left:4px solid #1a6dff;background:#eef3ff;padding:8px 10px;margin:6px 0;border-radius:6px'><b>" + e(tm) + "</b> " + e(b.get("name", "")) + " &middot; " + e(b.get("service", "")) + "</div>"))
+        for bl in shop.get("blocks", []):
+            if bl.get("date") == ds:
+                span = (bl["start"] + " - " + bl["end"]) if bl.get("start") else "Whole day"
+                items.append((bl.get("start") or "00:00", "<div style='border-left:4px solid #e23b3b;background:#fde8e8;padding:8px 10px;margin:6px 0;border-radius:6px'><b>&#9940; " + e(span) + "</b>" + (" &middot; " + e(bl["why"]) if bl.get("why") else "") + "</div>"))
+        items.sort(key=lambda x: x[0])
+        body = "".join(x[1] for x in items)
+        if day.weekday() not in open_days:
+            body = "<p style='color:#888;margin:4px 0'>Closed</p>" + body
+        elif not body:
+            body = "<p style='color:#888;margin:4px 0'>No bookings</p>"
+        is_today = day == today
+        out += "<div class='card' style='" + ("border:2px solid #1a6dff;" if is_today else "") + "'><b>" + day.strftime("%a %b %d") + (" &middot; Today" if is_today else "") + "</b>" + body + "</div>"
+    nb = "flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700"
+    nav = "<div style='display:flex;gap:10px;margin:10px 0'><a style='" + nb + "' href='/cal/" + sid + "?w=" + str(w - 1) + "'>&#8592; Prev week</a><a style='" + nb + "' href='/cal/" + sid + "?w=" + str(w + 1) + "'>Next week &#8594;</a></div>"
+    return S + "<h1>&#128197; Calendar</h1><p>" + e(shop.get("name", "")) + " &middot; " + start.strftime("%b %d") + " - " + (start + timedelta(days=6)).strftime("%b %d") + "</p>" + nav + out + nav + "<a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
+
+
+def _bb_week(shop, sid):
+    e = lambda s: str(escape(s))
+    today = (datetime.utcnow() - timedelta(hours=10)).date()
+    open_days = [int(x) for x in shop.get("days", [])] or [0, 1, 2, 3, 4]
+    out = ""
+    for i in range(7):
+        day = today + timedelta(days=i)
+        ds = day.strftime("%Y-%m-%d")
+        items = []
+        for b in shop.get("bookings", []):
+            if str(b.get("when", "")).startswith(ds):
+                tm = str(b.get("when", ""))[11:16]
+                items.append((tm, "<div style='border-left:4px solid #1a6dff;background:#eef3ff;padding:6px 10px;margin:4px 0;border-radius:6px'><b>" + e(tm) + "</b> " + e(b.get("name", "")) + " &middot; " + e(b.get("service", "")) + "</div>"))
+        for bl in shop.get("blocks", []):
+            if bl.get("date") == ds:
+                span = (bl["start"] + " - " + bl["end"]) if bl.get("start") else "Whole day"
+                items.append((bl.get("start") or "00:00", "<div style='border-left:4px solid #e23b3b;background:#fde8e8;padding:6px 10px;margin:4px 0;border-radius:6px'><b>&#9940; " + e(span) + "</b>" + (" &middot; " + e(bl["why"]) if bl.get("why") else "") + "</div>"))
+        items.sort(key=lambda x: x[0])
+        body = "".join(x[1] for x in items)
+        if day.weekday() not in open_days:
+            body = "<span style='color:#888'> Closed</span>" + body
+        elif not body:
+            body = "<span style='color:#888'> No bookings</span>"
+        out += "<div class='card' style='padding:10px 14px;" + ("border:2px solid #1a6dff;" if i == 0 else "") + "'><b>" + day.strftime("%a %b %d") + (" &middot; Today" if i == 0 else "") + "</b>" + body + "</div>"
+    return out + "<a href='/cal/" + sid + "' style='display:block;text-align:right;font-weight:700;margin:4px 0 12px'>Full calendar &#8594;</a>"
+
+
+def _bb_uptiles(up):
+    e = lambda s: str(escape(s))
+    if not up:
+        return "<div class='card' style='color:#888'>No upcoming appointments.</div>"
+    tiles = ""
+    for b in up[:20]:
+        w = str(b.get("when", ""))
+        try:
+            dl = datetime.strptime(w, "%Y-%m-%d %H:%M").strftime("%a %b %d")
+        except Exception:
+            dl = w[:10]
+        ph = str(b.get("phone", ""))
+        tiles += "<div style='flex:0 0 150px;background:#fff;border-left:5px solid #1a6dff;border-radius:12px;padding:10px;box-shadow:0 1px 4px rgba(0,0,0,.08)'><div style='color:#1a6dff;font-weight:800'>" + e(dl) + "</div><div style='font-size:20px;font-weight:800'>" + e(w[11:16]) + "</div><div><b>" + e(b.get("name", "")) + "</b></div><div style='color:#556'>" + e(b.get("service", "")) + "</div>" + ("<a href='tel:" + e(ph) + "' style='font-size:13px'>&#128222; " + e(ph) + "</a>" if ph else "") + "</div>"
+    return "<div style='display:flex;gap:10px;overflow-x:auto;padding:4px 2px 10px'>" + tiles + "</div>"
+
+def _bb_month(shop, sid):
+    import calendar as _cal
+    e = lambda s: str(escape(s))
+    today = (datetime.utcnow() - timedelta(hours=10)).date()
+    y, mo = today.year, today.month
+    key = "%04d-%02d" % (y, mo)
+    cnt, blk = {}, set()
+    for b in shop.get("bookings", []):
+        w = str(b.get("when", ""))
+        if w[:7] == key:
+            try:
+                cnt[int(w[8:10])] = cnt.get(int(w[8:10]), 0) + 1
+            except Exception:
+                pass
+    for bl in shop.get("blocks", []):
+        dt = str(bl.get("date", ""))
+        if dt[:7] == key:
+            try:
+                blk.add(int(dt[8:10]))
+            except Exception:
+                pass
+    open_days = [int(x) for x in shop.get("days", [])] or [0, 1, 2, 3, 4]
+    hd = "".join("<div style='text-align:center;font-size:12px;font-weight:700;color:#667'>" + d + "</div>" for d in ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"])
+    cells = ""
+    for wk in _cal.Calendar(firstweekday=6).monthdayscalendar(y, mo):
+        for dy in wk:
+            if dy == 0:
+                cells += "<div></div>"
+                continue
+            day = today.replace(day=dy)
+            off = (day - today).days // 7
+            closed = day.weekday() not in open_days
+            bg = "#f1f1f1" if closed else "#fff"
+            ring = "border:2px solid #1a6dff;" if day == today else "border:1px solid #e3e3e3;"
+            badge = ("<div style='background:#1a6dff;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:0 6px;display:inline-block'>" + str(cnt[dy]) + "</div>") if dy in cnt else ""
+            dot = "<div style='width:8px;height:8px;border-radius:50%;background:#e23b3b;margin:2px auto 0'></div>" if dy in blk else ""
+            cells += "<a href='/cal/" + sid + "?w=" + str(off) + "' style='display:block;min-height:46px;background:" + bg + ";" + ring + "border-radius:8px;padding:3px;text-align:center;text-decoration:none;color:" + ("#999" if closed else "#222") + "'><div style='font-size:13px;font-weight:" + ("800" if day == today else "600") + "'>" + str(dy) + "</div>" + badge + dot + "</a>"
+    legend = "<div style='font-size:12px;color:#556;margin-top:8px'><span style='color:#1a6dff'>&#9679;</span> bookings &nbsp; <span style='color:#e23b3b'>&#9679;</span> blocked &nbsp; <span style='color:#999'>&#9632;</span> closed &nbsp; tap a day for details</div>"
+    return "<div class='card'><div style='font-weight:800;margin-bottom:8px'>" + _cal.month_name[mo] + " " + str(y) + "</div><div style='display:grid;grid-template-columns:repeat(7,1fr);gap:4px'>" + hd + cells + "</div>" + legend + "</div>"
+
+
+@app.route("/edit/<sid>", methods=["GET", "POST"])
+def _bb_edit(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return S + "<h1>Not found</h1>", 404
+    if not _bb_sess.get("own_" + sid):
+        return redirect("/d/" + sid)
+    e = lambda s: str(escape(s))
+    msg = ""
+    if request.method == "POST":
+        f = request.form
+        svc = {}
+        i = 0
+        while ("sn%d" % i) in f:
+            n = f.get("sn%d" % i, "").strip()
+            if n and not f.get("sx%d" % i):
+                try:
+                    svc[n[:60]] = round(float(f.get("sp%d" % i, "0") or 0), 2)
+                except Exception:
+                    svc[n[:60]] = 0.0
+            i += 1
+        err = ""
+        if not f.get("name", "").strip():
+            err = "Business name can't be empty."
+        elif not svc:
+            err = "Keep at least one service."
+        elif not f.getlist("days"):
+            err = "Pick at least one day you're open."
+        elif f.get("open", "") >= f.get("close", ""):
+            err = "Closing time must be after opening time."
+        if err:
+            msg = "<div class='card' style='background:#fde8e8;border-left:6px solid #e23b3b'><b>&#9888; " + e(err) + "</b> Nothing was saved.</div>"
+        else:
+            shop["name"] = f.get("name", "").strip()[:80]
+            shop["owner"] = f.get("owner", "").strip()[:80]
+            shop["addr"] = f.get("addr", "").strip()[:200]
+            shop["days"] = f.getlist("days")
+            shop["open"] = f.get("open", "09:00")
+            shop["close"] = f.get("close", "17:00")
+            shop["slot"] = f.get("slot", "30")
+            shop["services"] = svc
+            save(d)
+            msg = "<div class='card' style='background:#e6f7ee;border-left:6px solid #1faa59'><b>&#10003; Saved!</b> Your public page is updated.</div>"
+    days = [str(x) for x in shop.get("days", [])] or ["0", "1", "2", "3", "4"]
+    names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    dbox = "".join("<label style='margin-right:10px;white-space:nowrap'><input type='checkbox' name='days' value='" + str(i) + "'" + (" checked" if str(i) in days else "") + " style='width:auto'> " + n + "</label>" for i, n in enumerate(names))
+    sl = str(shop.get("slot", "30"))
+    sopt = "".join("<option value='" + v + "'" + (" selected" if v == sl else "") + ">" + lab + "</option>" for v, lab in [("30", "30 minutes"), ("60", "1 hour"), ("90", "90 minutes"), ("120", "2 hours")])
+    rows = ""
+    items = list(shop.get("services", {}).items())
+    for i, (n, p) in enumerate(items):
+        try:
+            ps = "%g" % float(p)
+        except Exception:
+            ps = str(p)
+        rows += "<div class='card'><input name='sn" + str(i) + "' value='" + e(n) + "' placeholder='Service name'><input name='sp" + str(i) + "' type='number' step='0.01' min='0' value='" + e(ps) + "' placeholder='Price $'><label style='color:#e23b3b'><input type='checkbox' name='sx" + str(i) + "' value='1' style='width:auto'> Remove this service</label></div>"
+    for j in range(len(items), len(items) + 3):
+        rows += "<div class='card' style='background:#f7f9ff'><input name='sn" + str(j) + "' placeholder='New service (optional)'><input name='sp" + str(j) + "' type='number' step='0.01' min='0' placeholder='Price $'></div>"
+    return S + "<h1>&#9999;&#65039; Edit customer booking page</h1>" + msg + "<form method='post'><h3>Business info</h3><p>Business name</p><input name='name' value='" + e(shop.get("name", "")) + "' required><p>Your name</p><input name='owner' value='" + e(shop.get("owner", "")) + "'><p>Address</p><input name='addr' value='" + e(shop.get("addr", "")) + "'><h3>Hours</h3><p><b>Days you're open:</b></p>" + dbox + "<p>Opening time</p><input type='time' name='open' value='" + e(shop.get("open", "09:00")) + "'><p>Closing time</p><input type='time' name='close' value='" + e(shop.get("close", "17:00")) + "'><p>Appointment length</p><select name='slot'>" + sopt + "</select><h3>Services &amp; prices</h3>" + rows + "<button>Save changes</button></form><p><a href='/b/" + sid + "'>&#128064; Preview my page</a></p><a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
+
+
+def _bb_me():
+    try:
+        own = [k[4:] for k in list(_bb_sess.keys()) if k.startswith("own_") and _bb_sess.get(k)]
+    except Exception:
+        return None
+    if not own:
+        return None
+    d = load()
+    for s in own:
+        if s in d and d[s].get("email") and d[s].get("pw"):
+            return d[s]
+    return None
+
+def _bb_owner_input():
+    me = _bb_me()
+    if not me:
+        return "<input name='owner' placeholder='Your name' required>"
+    return "<input type='hidden' name='owner' value='" + str(escape(me.get("owner", ""))) + "'><div class='card'>Adding to your account: <b>" + str(escape(me.get("email", ""))) + "</b></div>"
+
+def _bb_acct_inputs():
+    me = _bb_me()
+    if not me:
+        return """<input name='email' placeholder='Your email (we send a confirm link)' type='email' required><input name='pw' type='password' placeholder='Create a password' required><input name='pw2' type='password' placeholder='Confirm password' required oninput="this.setCustomValidity(this.value==this.form.pw.value?'':'Passwords do not match')">"""
+    return "<input type='hidden' name='use_acct' value='1'><div class='card' style='background:#e6f7ee;border-left:6px solid #1faa59'>&#10003; Using your account <b>" + str(escape(me.get("email", ""))) + "</b>. No new password needed.</div>"
 
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
