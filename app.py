@@ -14,7 +14,7 @@ def build_slots(shop):
     except Exception:
         oh,om,ch,cm=9,0,17,0
     step=int(shop.get("slot","30") or 30)
-    taken={b.get("when") for b in shop.get("bookings",[])}
+    taken=_bb_full(shop)
     labels=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
     out=[]
     today=(datetime.utcnow() - timedelta(hours=10))
@@ -35,15 +35,16 @@ DASH_PASS = "bookie123"
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 DB = "shops.json"
 TEMPLATES = {
- "Hair salon": {"Haircut": 30, "Color": 60, "Blowout": 25, "Treatment": 40},
- "Barber": {"Haircut": 20, "Fade": 25, "Beard trim": 15, "Cut and beard": 35},
- "Nails": {"Manicure": 20, "Pedicure": 30, "Gel set": 40, "Fill": 25},
- "Tattoo": {"Small tattoo": 50, "Medium piece": 100, "Large piece": 200, "Consultation": 0},
+ "Barber": {"Haircut": 20, "Skin fade": 25, "Beard trim": 15, "Haircut + beard": 35, "Kids cut": 15},
+ "Cleaning": {"Standard clean (deposit)": 50, "Deep clean (deposit)": 100, "Move-out clean (deposit)": 150, "Free estimate": 0},
+ "Hair salon": {"Women's haircut": 30, "Men's haircut": 25, "Blowout": 25, "Color (deposit)": 60, "Treatment": 40, "Free consultation": 0},
+ "Lashes and brows": {"Classic lash set": 50, "Lash fill": 30, "Brow shape": 15, "Brow tint": 15},
  "Massage": {"30 min massage": 30, "60 min massage": 50, "90 min massage": 70},
- "Lashes and brows": {"Lash set": 50, "Lash fill": 30, "Brow shape": 15},
- "Personal trainer": {"1 session": 25, "5 sessions": 100, "Consultation": 0},
- "Cleaning": {"Standard clean": 50, "Deep clean": 100, "Move-out clean": 150},
- "Photography": {"Mini session": 50, "Full session": 100, "Event": 200},
+ "Nails": {"Manicure": 20, "Gel manicure": 30, "Pedicure": 30, "Full set": 40, "Fill": 25},
+ "Personal trainer": {"30 min session": 15, "60 min session": 25, "Free consultation": 0},
+ "Photography": {"Mini session (deposit)": 50, "Full session (deposit)": 100, "Event (deposit)": 200},
+ "Restaurant": {"Table reservation": 0},
+ "Tattoo": {"Free consultation": 0, "Small tattoo (deposit)": 50, "Medium piece (deposit)": 100, "Large piece (deposit)": 200},
  "Other": {"Appointment": 0}}
 def load():
     return json.load(open(DB)) if os.path.exists(DB) else {}
@@ -159,7 +160,7 @@ def book_page(sid):
     return S + f"""<h1>{escape(shop['name'])}</h1>{ow}<p>Location: {escape(shop.get('addr',''))}</p>{_bb_phone_html(shop)}{revs}{prices}<p>Book an appointment</p>
 <form method='post' action='/book/{sid}'>
 <input name='name' placeholder='Your name' required>
-<input name='phone' placeholder='Phone number' required><p style='font-size:12px;color:#556;margin:2px 0 8px'>By booking, you agree to receive appointment texts (reminders, confirmations, cancellations) at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. <a href='/privacy'>Privacy</a> &middot; <a href='/terms'>Terms</a></p>
+<input name='phone' placeholder='Phone number' required>{_bb_guests_sel(shop)}{_bb_fee_box(shop)}<p style='font-size:12px;color:#556;margin:2px 0 8px'>By booking, you agree to receive appointment texts (reminders, confirmations, cancellations) at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. <a href='/privacy'>Privacy</a> &middot; <a href='/terms'>Terms</a></p>
 <input name='email' type='email' placeholder='Email (we send your booking link)' required>
 <select name='service'>{opts}</select>
 {slots}
@@ -179,7 +180,8 @@ def book(sid):
     shop = d[sid]
     s = request.form["service"]
     fee = shop["services"].get(s, 0)
-    if request.form.get("when", "") in {x.get("when") for x in shop.get("bookings", [])} or _bb_blocked(shop, request.form.get("when", "")):
+    fee = _bb_gross(_bb_party_fee(shop, fee))
+    if request.form.get("when", "") in _bb_full(shop) or _bb_blocked(shop, request.form.get("when", "")):
         return _bb_taken(sid, shop)
     if not request.form.get("email"):
         return S + "<h1>Please enter your email</h1><p>We send your booking link there.</p><a href='/b/" + sid + "'>Back</a>"
@@ -502,7 +504,7 @@ def paid(sid):
     import secrets
     ex = [b for b in shop["bookings"] if b.get("paid_id") == info["id"]]
     rt = ex[0].get("rt", "") if ex else secrets.token_urlsafe(8)
-    if not ex and m.get("when") in {x.get("when") for x in shop["bookings"]}:
+    if not ex and m.get("when") in _bb_full(shop):
         try:
             import stripe as _s
             _s.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
@@ -1160,6 +1162,9 @@ def _bb_edit(sid):
             shop["owner"] = f.get("owner", "").strip()[:80]
             shop["addr"] = f.get("addr", "").strip()[:200]
             shop["bphone"] = f.get("bphone", "").strip()[:30]
+            shop["guests_on"] = f.get("guests_on") == "1"
+            shop["tables"] = max(1, min(99, int(f.get("tables") or 5))) if (f.get("tables") or "5").strip().isdigit() else 5
+            shop["deposit"] = int(f.get("deposit")) if (f.get("deposit") or "").strip().isdigit() else 25
             shop["days"] = f.getlist("days")
             shop["open"] = f.get("open", "09:00")
             shop["close"] = f.get("close", "17:00")
@@ -1294,6 +1299,131 @@ def _bb_phone_html(shop):
 
 def _bb_bphone_in(shop):
     return "<p>Business phone</p><input name='bphone' type='tel' placeholder='(808) 555-1234' value='" + str(escape(shop.get("bphone", ""))) + "'>"
+
+
+def _bb_guests_on(shop):
+    if "guests_on" in shop:
+        return bool(shop["guests_on"])
+    ty = (shop.get("type") or "").lower()
+    return any(w in ty for w in ("restaurant", "cafe", "diner", "bar", "grill", "bistro", "eatery"))
+
+
+def _bb_guests_sel(shop):
+    if not _bb_guests_on(shop):
+        return ""
+    o = "".join("<option value='" + str(i) + "'" + (" selected" if i == 2 else "") + ">" + str(i) + "</option>" for i in range(1, 9))
+    return "<p>Number of guests</p><select name='guests' required>" + o + "<option value='9+'>9+ (large party)</option></select>"
+
+
+_bb_bphone_in_old = _bb_bphone_in
+
+
+def _bb_bphone_in(shop):
+    ck = " checked" if _bb_guests_on(shop) else ""
+    return _bb_bphone_in_old(shop) + "<p><label><input type='checkbox' name='guests_on' value='1'" + ck + " style='width:auto'> Ask customers for number of guests (restaurants)</label></p>"
+
+
+@app.before_request
+def _bb_guests_hook():
+    if request.method != "POST":
+        return
+    g = (request.form.get("guests") or "").strip()[:6]
+    n = request.form.get("name") or ""
+    if not g or not n or "party of" in n or "when" not in request.form:
+        return
+    from werkzeug.datastructures import ImmutableMultiDict
+    d = request.form.to_dict(flat=False)
+    d["name"] = [n + " (party of " + g + ")"]
+    request.form = ImmutableMultiDict(d)
+
+
+def _bb_full(shop):
+    cap = 1
+    if _bb_guests_on(shop):
+        try:
+            cap = max(1, int(shop.get("tables") or 5))
+        except Exception:
+            cap = 5
+    c = {}
+    for x in shop.get("bookings", []):
+        w = x.get("when")
+        c[w] = c.get(w, 0) + 1
+    return {w for w, k in c.items() if k >= cap}
+
+
+_bb_bphone_in_old2 = _bb_bphone_in
+
+
+def _bb_bphone_in(shop):
+    return _bb_bphone_in_old2(shop) + "<p>Tables per time slot (restaurants)</p><input name='tables' type='number' min='1' max='99' value='" + str(shop.get("tables") or 5) + "'>"
+
+
+def _bb_dep(shop):
+    try:
+        return max(0, int(shop.get("deposit", 25)))
+    except Exception:
+        return 25
+
+
+def _bb_party_fee(shop, fee):
+    if not _bb_guests_on(shop):
+        return fee
+    g = (request.form.get("guests") or "").strip()
+    big = g == "9+" or "party of 9+" in (request.form.get("name") or "")
+    if big and _bb_dep(shop) > 0:
+        return float(fee or 0) + _bb_dep(shop)
+    return fee
+
+
+_bb_guests_sel_old = _bb_guests_sel
+
+
+def _bb_guests_sel(shop):
+    h = _bb_guests_sel_old(shop)
+    if h and _bb_dep(shop) > 0:
+        h += "<p style='font-size:12px;color:#556;margin:2px 0 8px'>Parties of 9 or more require a $" + str(_bb_dep(shop)) + " deposit at booking.</p>"
+    return h
+
+
+_bb_bphone_in_old3 = _bb_bphone_in
+
+
+def _bb_bphone_in(shop):
+    return _bb_bphone_in_old3(shop) + "<p>Large party (9+) deposit in $ (0 = no deposit)</p><input name='deposit' type='number' min='0' max='999' value='" + str(_bb_dep(shop)) + "'>"
+
+
+def _bb_gross(fee):
+    try:
+        c = int(round(float(fee or 0) * 100))
+    except Exception:
+        return fee
+    if c <= 0:
+        return fee
+    t = int(-(-(c + 30) // (1 - BB_CUT - 0.029)))
+    while t - (int(round(t * BB_CUT)) + int(round(t * 0.029)) + 30) < c:
+        t += 1
+    return t / 100
+
+
+def _bb_fee_box(shop):
+    import json
+    dep = _bb_dep(shop) if _bb_guests_on(shop) else 0
+    m = {}
+    for k, v in (shop.get("services") or {}).items():
+        try:
+            b = float(v or 0)
+        except Exception:
+            b = 0
+        m[k] = [b, float(_bb_gross(b) or 0), b + dep, float(_bb_gross(b + dep) or 0)]
+    js = json.dumps(m).replace("</", "<\\/")
+    return ("<div id='bbfee' class='card' style='font-size:14px;margin:8px 0'></div><script>(function(){var M=" + js + ";"
+            "function f(x){return '$'+x.toFixed(2)}"
+            "function u(){var e=document.querySelector('[name=service]:checked')||document.querySelector('select[name=service]');"
+            "var g=document.querySelector('[name=guests]');var big=g&&g.value=='9+';var d=document.getElementById('bbfee');"
+            "if(!e||!M[e.value]){d.style.display='none';return}var r=M[e.value];var b=big?r[2]:r[0],t=big?r[3]:r[1];"
+            "if(t<=0){d.innerHTML='<b>Total: Free</b> - no card needed';d.style.display='block';return}"
+            "d.innerHTML=(big&&r[2]>r[0]?e.value+' + large party deposit: ':e.value+': ')+f(b)+'<br>Service &amp; card fees: '+f(t-b)+'<br><b>Total charged today: '+f(t)+'</b>';d.style.display='block'}"
+            "document.addEventListener('change',u);document.addEventListener('DOMContentLoaded',u);u()})();</script>")
 
 
 import os
