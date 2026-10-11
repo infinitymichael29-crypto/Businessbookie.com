@@ -72,7 +72,7 @@ body{margin:0;font-family:system-ui,Arial;background:#1a6dff;color:#fff;text-ali
 <div class="sub">Your own booking page in minutes.</div>
 <div style='margin:18px 0 6px'><div style='color:#fff;font-size:15px;margin:6px 0 8px'>For customers</div><a href='/find' style='display:block;box-sizing:border-box;width:100%;max-width:340px;margin:0 auto 14px;padding:14px;background:#fff;color:#1a6dff;border:2px solid #1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)'>&#128197; Book an appointment</a><div style='color:#fff;font-size:15px;margin:6px 0 8px'>New to Business-Bookie?</div><a href='/new' style='display:block;box-sizing:border-box;width:100%;max-width:340px;margin:0 auto 14px;padding:14px;background:#fff;color:#1a6dff;border:2px solid #1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)'>&#127970; Sign up my business</a><div style='color:#fff;font-size:15px;margin:6px 0 8px'>Already have a business?</div><a href='/login' style='display:block;box-sizing:border-box;width:100%;max-width:340px;margin:0 auto 14px;padding:14px;background:#fff;color:#1a6dff;border:2px solid #1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)'>&#128273; Log in to check bookings</a></div>
 <div class="benes">&#9989; Your own booking link<br>&#9989; Get paid up front<br>&#9989; No more DMs</div>
-<div class="trust">Free business signup &middot; No credit card needed</div><div style='margin-top:14px'></div>
+<div class="trust">Free business signup &middot; No credit card needed</div><div style='margin-top:10px;font-size:13px'><a href='/privacy' style='color:#fff'>Privacy Policy</a> &middot; <a href='/terms' style='color:#fff'>Terms</a></div><div style='margin-top:14px'></div>
 </div>
 </body></html>
 """)
@@ -159,7 +159,7 @@ def book_page(sid):
     return S + f"""<h1>{escape(shop['name'])}</h1>{ow}<p>Location: {escape(shop.get('addr',''))}</p>{revs}{prices}<p>Book an appointment</p>
 <form method='post' action='/book/{sid}'>
 <input name='name' placeholder='Your name' required>
-<input name='phone' placeholder='Phone number' required>
+<input name='phone' placeholder='Phone number' required><p style='font-size:12px;color:#556;margin:2px 0 8px'>By booking, you agree to receive appointment texts (reminders, confirmations, cancellations) at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. <a href='/privacy'>Privacy</a> &middot; <a href='/terms'>Terms</a></p>
 <input name='email' type='email' placeholder='Email (we send your booking link)' required>
 <select name='service'>{opts}</select>
 {slots}
@@ -1208,6 +1208,60 @@ def _bb_acct_inputs():
     if not me:
         return """<input name='email' placeholder='Your email (we send a confirm link)' type='email' required><input name='pw' type='password' placeholder='Create a password' required><input name='pw2' type='password' placeholder='Confirm password' required oninput="this.setCustomValidity(this.value==this.form.pw.value?'':'Passwords do not match')">"""
     return "<input type='hidden' name='use_acct' value='1'><div class='card' style='background:#e6f7ee;border-left:6px solid #1faa59'>&#10003; Using your account <b>" + str(escape(me.get("email", ""))) + "</b>. No new password needed.</div>"
+
+
+_BB_CONTACT = "infinitymichael29@gmail.com"
+
+@app.route("/privacy")
+def _bb_privacy():
+    return S + """<h1>Privacy Policy</h1><p><i>Last updated: October 10, 2026</i></p>
+<p>Business-Bookie (business-bookie.com) is an online booking service that lets businesses take appointments and payments, and lets customers book with them. This policy explains what we collect and how we use it.</p>
+<h3>What we collect</h3>
+<p><b>Customers:</b> your name, phone number, email address, the service and time you book, and any review you leave.<br><b>Business owners:</b> business name, owner name, address, email, password, hours, services and prices.<br><b>Payments:</b> card payments are processed by Stripe. We never see or store your full card number.</p>
+<h3>How we use it</h3>
+<p>We use your information only to run bookings: confirming and managing appointments, sending reminders, confirmations, and cancellation notices, processing payments and refunds, and letting the business you booked with see your booking.</p>
+<h3>Text messages (SMS)</h3>
+<p>If you give your phone number when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to opt out at any time, or <b>HELP</b> for help.</p>
+<p><b>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.</b> Text messaging opt-in data and consent will not be shared with any third parties.</p>
+<h3>Who we share with</h3>
+<p>We share your booking details with the business you booked with, and we use trusted service providers to run the site: Stripe (payments), Twilio (text messages), Resend (email), Neon (database), and Render (hosting). They only use your data to provide those services. <b>We do not sell your personal information.</b></p>
+<h3>Keeping and deleting data</h3>
+<p>We keep booking records as long as needed to run the service and meet legal and payment requirements. To ask us to delete your information, email us below.</p>
+<h3>Security</h3>
+<p>We use HTTPS and trusted providers to protect your data, but no system is 100% secure.</p>
+<h3>Children</h3>
+<p>Business-Bookie is not intended for children under 13.</p>
+<h3>Changes</h3>
+<p>We may update this policy. The date at the top shows the latest version.</p>
+<h3>Contact</h3>
+<p>Questions or requests: <a href='mailto:""" + _BB_CONTACT + "'>" + _BB_CONTACT + """</a></p>
+<p><a href='/terms'>Terms</a> &middot; <a href='/'>Home</a></p>"""
+
+@app.route("/terms")
+def _bb_terms():
+    return S + """<h1>Terms &amp; Conditions</h1><p><i>Last updated: October 10, 2026</i></p>
+<p>By using Business-Bookie (business-bookie.com), you agree to these terms.</p>
+<h3>The service</h3>
+<p>Business-Bookie lets businesses list their services and take bookings, and lets customers book and pay. Each business is responsible for its own services, prices, hours, and for showing up to appointments.</p>
+<h3>Booking and payment</h3>
+<p>Customers pay the full price when booking. Payments are processed securely by Stripe. Business-Bookie keeps a small service fee from each payment.</p>
+<h3>Cancellations, rescheduling, and no-shows</h3>
+<p>If you cancel before your appointment, you are refunded the amount paid minus a processing fee (card fees plus a 3.7% service fee). To reschedule, work it out with the business owner. If you miss your appointment without cancelling, your payment is non-refundable. If a business removes itself from Business-Bookie, upcoming bookings are cancelled and the customers are refunded. If a time slot is booked by someone else at the same moment, the later payment is refunded in full.</p>
+<h3>Text messages (SMS)</h3>
+<p>By giving your phone number when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to stop receiving messages. Reply <b>HELP</b> for help, or email us below. Carriers are not liable for delayed or undelivered messages.</p>
+<h3>Business owners</h3>
+<p>Owners must give accurate information, connect a valid payout account through Stripe, keep their login private, and honor the bookings they accept.</p>
+<h3>Acceptable use</h3>
+<p>Don't misuse the site: no fake bookings, fraud, spam, or attempts to break or overload the service. We may suspend accounts that do.</p>
+<h3>Limitation of liability</h3>
+<p>Business-Bookie provides the booking platform only and isn't responsible for the services businesses provide. The service is offered "as is," and to the extent the law allows, our liability is limited to the fees we received for the booking in question.</p>
+<h3>Changes</h3>
+<p>We may update these terms. The date at the top shows the latest version.</p>
+<h3>Governing law</h3>
+<p>These terms are governed by the laws of the State of Hawaii.</p>
+<h3>Contact</h3>
+<p><a href='mailto:""" + _BB_CONTACT + "'>" + _BB_CONTACT + """</a></p>
+<p><a href='/privacy'>Privacy Policy</a> &middot; <a href='/'>Home</a></p>"""
 
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
