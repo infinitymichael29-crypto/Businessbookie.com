@@ -201,7 +201,7 @@ def book(sid):
                 success_url=base + "/paid/" + sid + "?session_id={CHECKOUT_SESSION_ID}",
                 cancel_url=base + "/b/" + sid)
         except Exception as ex:
-            return S + "<h1>Payment error</h1><p>" + str(escape(str(ex))) + "</p><a href='/b/" + sid + "'>Back</a>"
+            return _bb_payerr(d, sid, shop, ex)
         return redirect(cs.url, code=303)
     rt = secrets.token_urlsafe(8)
     shop["bookings"].append({"name": request.form["name"], "phone": request.form["phone"], "service": s, "when": request.form["when"], "fee": fee, "rt": rt, "email": request.form.get("email", "")})
@@ -817,7 +817,7 @@ def load():
         return _bb_fload()
     c = _bb_db()
     try:
-        r = c.run("SELECT v FROM bb_kv WHERE k='shops'")
+        r = c.run("SELECT v FROM bb_kv WHERE k IN (:k, 'shops') ORDER BY (k = :k) DESC LIMIT 1", k=_bb_dbkey())
     finally:
         c.close()
     if r:
@@ -833,7 +833,7 @@ def save(d):
         return _bb_fsave(d)
     c = _bb_db()
     try:
-        c.run("INSERT INTO bb_kv (k, v) VALUES ('shops', :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", v=json.dumps(d))
+        c.run("INSERT INTO bb_kv (k, v) VALUES (:k, :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", k=_bb_dbkey(), v=json.dumps(d))
     finally:
         c.close()
 
@@ -1510,6 +1510,28 @@ def notify(subject, body, to=None):
     except Exception as e:
         print("qr mail:", e)
     return _bb_notify_old(subject, body, to)
+
+
+def _bb_dbkey():
+    return "shops_test" if os.environ.get("STRIPE_SECRET_KEY", "").startswith("sk_test") else "shops"
+
+
+def _bb_payerr(d, sid, shop, ex):
+    msg = str(ex)
+    if "No such destination" in msg or "No such account" in msg:
+        shop.pop("acct", None)
+        shop["payouts_on"] = False
+        try:
+            save(d)
+        except Exception as e:
+            print("payerr save:", e)
+        try:
+            notify("Action needed: reconnect payments for " + shop.get("name", ""), "A customer tried to book a paid service at " + shop.get("name", "") + ", but your payment account needs to be reconnected. Log in to your dashboard and tap Connect payments: " + request.host_url + "d/" + sid, shop.get("email"))
+        except Exception as e:
+            print("payerr mail:", e)
+        ph = shop.get("bphone", "")
+        return S + "<h1>Online payments are being set up</h1><p>" + str(escape(shop.get("name", ""))) + " is finishing its payment setup, so paid bookings aren't available right now. <b>You have not been charged.</b></p>" + ("<p>Please call to book: <a href='tel:" + str(escape(ph)) + "'>" + str(escape(ph)) + "</a></p>" if ph else "<p>Please try again later.</p>") + "<a href='/b/" + sid + "'>Back</a>"
+    return S + "<h1>Payment error</h1><p>" + str(escape(msg)) + "</p><a href='/b/" + sid + "'>Back</a>"
 
 
 import os
