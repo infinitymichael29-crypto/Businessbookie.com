@@ -1534,5 +1534,54 @@ def _bb_payerr(d, sid, shop, ex):
     return S + "<h1>Payment error</h1><p>" + str(escape(msg)) + "</p><a href='/b/" + sid + "'>Back</a>"
 
 
+@app.route("/favicon.ico")
+@app.route("/favicon-32.png")
+def bb_favicon():
+    from flask import send_from_directory
+    return send_from_directory(app.root_path, "favicon-32.png", mimetype="image/png", max_age=86400)
+
+
+@app.route("/icon-192.png")
+@app.route("/icon-512.png")
+def bb_icons():
+    from flask import send_from_directory
+    return send_from_directory(app.root_path, request.path.lstrip("/"), mimetype="image/png", max_age=86400)
+
+
+@app.route("/manifest.json")
+def bb_manifest():
+    import json as _j
+    m = {"name": "Business-Bookie", "short_name": "Business-Bookie", "description": "Book appointments with local businesses, or take bookings for your own.",
+         "start_url": "/", "scope": "/", "display": "standalone", "background_color": "#ffffff", "theme_color": "#1a6dff",
+         "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                   {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                   {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
+    return app.response_class(_j.dumps(m), mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def bb_sw():
+    js = "self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());self.addEventListener('fetch',e=>{});"
+    return app.response_class(js, mimetype="application/javascript")
+
+
+_bb_icon_head = ("<link rel='icon' type='image/png' href='/favicon-32.png'><link rel='apple-touch-icon' href='/icon-192.png'>"
+                 "<link rel='manifest' href='/manifest.json'><meta name='theme-color' content='#1a6dff'>"
+                 "<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){})}</script>")
+
+
+@app.after_request
+def _bb_icons_inject(resp):
+    try:
+        if resp.mimetype == "text/html" and resp.status_code == 200 and not resp.direct_passthrough:
+            h = resp.get_data(as_text=True)
+            if "rel='manifest'" not in h:
+                h = h.replace("</head>", _bb_icon_head + "</head>", 1) if "</head>" in h else _bb_icon_head + h
+                resp.set_data(h)
+    except Exception as e:
+        print("icons:", e)
+    return resp
+
+
 import os
 app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
