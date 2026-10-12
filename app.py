@@ -67,7 +67,7 @@ body{margin:0;font-family:system-ui,Arial;background:#1a6dff;color:#fff;text-ali
 .trust{margin-top:18px;font-size:14px;opacity:.9}
 </style></head><body>
 <div class="wrap">
-<div class="cal">&#128197;</div>
+<div class='cal'><svg width='96' height='96' viewBox='0 0 100 100' role='img' aria-label='Business-Bookie logo'><rect width='100' height='100' rx='22' fill='#ffffff'/><g transform='translate(17 16) scale(0.66)'><rect x='10' y='18' width='80' height='76' rx='16' fill='#1a6dff'/><rect x='28' y='6' width='10' height='24' rx='5' fill='#0b1f4d'/><rect x='62' y='6' width='10' height='24' rx='5' fill='#0b1f4d'/><text x='50' y='80' text-anchor='middle' font-family='Sora, Segoe UI, Arial, sans-serif' font-weight='800' font-size='54' fill='#ffffff'>B</text></g></svg></div>
 <div class="logo">Business-Bookie</div>
 <div class="head">Sign up your business for free</div>
 <div class="sub">Your own booking page in minutes.</div>
