@@ -75,7 +75,7 @@ body{margin:0;font-family:system-ui,Arial;background:#1a6dff;color:#fff;text-ali
 <div class="benes">&#9989; Your own booking link<br>&#9989; Get paid up front<br>&#9989; No more DMs</div>
 <div class="trust">Free business signup &middot; No credit card needed</div><div style='margin-top:10px;font-size:13px'><a href='/privacy' style='color:#fff'>Privacy Policy</a> &middot; <a href='/terms' style='color:#fff'>Terms</a></div><div style='margin-top:14px'></div>
 </div>
-</body></html>
+<p style='text-align:center;font-size:15px;margin:4px 0 20px'><a href='/qrcode' style='color:#fff;text-decoration:underline;font-weight:bold'>&#128241; Get our QR code</a></p></body></html>
 """)
 
 
@@ -134,7 +134,7 @@ def create():
     d[sid] = {"live": bool(request.form.get("use_acct") == "1"), "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "bphone": request.form.get("bphone", "").strip()[:30], "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
     save(d)
     notify("New business signed up", request.form["shop"])
-    notify("Confirm your business on Business-Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + tok, request.form["email"])
+    notify("Confirm your business on Business-Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + tok + "\n\nYour QR code to print, customers scan it to book: " + request.host_url + "qr/" + sid, request.form["email"])
     _bb_sess["own_" + sid] = True
     return redirect("/done/" + sid)
 @app.route("/b/<sid>")
@@ -1424,6 +1424,92 @@ def _bb_fee_box(shop):
             "if(t<=0){d.innerHTML='<b>Total: Free</b> - no card needed';d.style.display='block';return}"
             "d.innerHTML=(big&&r[2]>r[0]?e.value+' + large party deposit: ':e.value+': ')+f(b)+'<br>Service &amp; card fees: '+f(t-b)+'<br><b>Total charged today: '+f(t)+'</b>';d.style.display='block'}"
             "document.addEventListener('change',u);document.addEventListener('DOMContentLoaded',u);u()})();</script>")
+
+
+@app.route("/qr/<sid>")
+def bb_qr(sid):
+    d = load()
+    if sid not in d:
+        return S + "<h1>Not found</h1>", 404
+    import segno
+    base = request.host_url.rstrip("/") if "localhost" in request.host else "https://" + request.host
+    url = base + "/b/" + sid
+    q = segno.make(url, error="m")
+    img = q.png_data_uri(scale=10, border=2)
+    nm = str(escape(d[sid].get("name", "")))
+    fn = "".join(c for c in d[sid].get("name", "qr") if c.isalnum()) or "qr"
+    return (S + "<style>@media print{.noprint{display:none!important}}</style>"
+            "<div style='text-align:center'><h1>" + nm + "</h1><p style='font-size:20px;margin:4px 0'><b>Scan to book</b></p>"
+            "<img src='" + img + "' alt='QR code' style='width:280px;max-width:90%;image-rendering:pixelated'>"
+            "<p style='font-size:13px;color:#556;word-break:break-all'>" + str(escape(url)) + "</p>"
+            "<div class='noprint'><a href='" + img + "' download='" + fn + "-qr.png' style='display:block;max-width:340px;margin:10px auto;padding:14px;border:2px solid #1a6dff;border-radius:12px;text-decoration:none;font-weight:bold'>&#11015;&#65039; Download QR image</a>"
+            "<a href='#' onclick='window.print();return false' style='display:block;max-width:340px;margin:10px auto;padding:14px;border:2px solid #1a6dff;border-radius:12px;text-decoration:none;font-weight:bold'>&#128424;&#65039; Print</a>"
+            "<p style='font-size:13px;color:#556'>Put it on your counter, mirror, door or tables. Customers scan it with their phone camera to book.</p></div></div>")
+
+
+@app.after_request
+def _bb_qr_btn(resp):
+    try:
+        p = request.path
+        if request.method == "GET" and p.startswith("/d/") and resp.status_code == 200 and resp.mimetype == "text/html":
+            sid = p.split("/")[2]
+            h = resp.get_data(as_text=True)
+            if "Block off time" in h and "/qr/" + sid not in h and "</h1>" in h:
+                b = "<a href='/qr/" + sid + "' style='display:block;max-width:340px;margin:10px auto;padding:12px;border:2px solid #1a6dff;border-radius:12px;text-align:center;text-decoration:none;font-weight:bold'>&#128241; My QR code (scan to book)</a>"
+                h = h.replace(">Share link</button>", ">Share link</button>" + b, 1) if ">Share link</button>" in h else h.replace("</h1>", "</h1>" + b, 1)
+                resp.set_data(h)
+    except Exception as e:
+        print("qr btn:", e)
+    return resp
+
+
+def _bb_base():
+    return request.host_url.rstrip("/") if "localhost" in request.host else "https://" + request.host
+
+
+def _bb_qr_page(url, title, sub, note):
+    import segno
+    img = segno.make(url, error="m").png_data_uri(scale=10, border=2)
+    fn = "".join(c for c in title if c.isalnum()) or "qr"
+    btn = "display:block;max-width:340px;margin:10px auto;padding:14px;border:2px solid #1a6dff;border-radius:12px;text-decoration:none;font-weight:bold"
+    return (S + "<style>@media print{.noprint{display:none!important}}</style>"
+            "<div style='text-align:center'><h1>" + str(escape(title)) + "</h1>"
+            "<p style='font-size:20px;margin:4px 0'><b>" + str(escape(sub)) + "</b></p>"
+            "<img src='" + img + "' alt='QR code' style='width:280px;max-width:90%;image-rendering:pixelated'>"
+            "<p style='font-size:13px;color:#556;word-break:break-all'>" + str(escape(url)) + "</p>"
+            "<div class='noprint'><a href='" + img + "' download='" + fn + "-qr.png' style='" + btn + "'>&#11015;&#65039; Download QR image</a>"
+            "<a href='#' onclick='window.print();return false' style='" + btn + "'>&#128424;&#65039; Print</a>"
+            "<p style='font-size:13px;color:#556'>" + str(escape(note)) + "</p></div></div>")
+
+
+@app.route("/qrcode")
+def bb_qr_platform():
+    return _bb_qr_page(_bb_base() + "/", "Business-Bookie", "Scan to get started", "Post it anywhere. People scan to book a business or sign up their own.")
+
+
+@app.route("/myqr/<sid>/<rt>")
+def bb_qr_customer(sid, rt):
+    d = load()
+    if sid not in d:
+        return S + "<h1>Not found</h1>", 404
+    if not any(b.get("rt") == rt for b in d[sid].get("bookings", [])):
+        return S + "<h1>Booking not found</h1>", 404
+    url = _bb_base() + "/m/" + sid + "/" + rt
+    return _bb_qr_page(url, d[sid].get("name", "Your booking"), "Scan to view your booking", "Scan anytime to see, reschedule or cancel your booking.")
+
+
+_bb_notify_old = notify
+
+
+def notify(subject, body, to=None):
+    try:
+        import re
+        m = re.search(r"(https?://[^\s/]+)/m/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", body or "")
+        if m and "/myqr/" not in body:
+            body = body + "\n\nYour booking QR code (scan to view, reschedule or cancel): " + m.group(1) + "/myqr/" + m.group(2) + "/" + m.group(3)
+    except Exception as e:
+        print("qr mail:", e)
+    return _bb_notify_old(subject, body, to)
 
 
 import os
