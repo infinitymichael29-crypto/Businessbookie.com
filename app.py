@@ -1583,6 +1583,27 @@ def _bb_icons_inject(resp):
     return resp
 
 
+@app.before_request
+def _bb_dupe_email():
+    try:
+        if request.method != "POST" or request.endpoint != "create" or request.form.get("use_acct") == "1":
+            return None
+        em = (request.form.get("email") or "").strip().lower()
+        if not em:
+            return None
+        d = load()
+        if any((v.get("email") or "").strip().lower() == em for v in d.values()):
+            btn = "display:block;box-sizing:border-box;width:100%;max-width:340px;margin:12px auto;padding:14px;border:2px solid #1a6dff;border-radius:12px;text-align:center;text-decoration:none;font-weight:bold"
+            return (S + "<h1>You already have an account</h1>"
+                    "<p><b>" + str(escape(em)) + "</b> already has a business on Business-Bookie.</p>"
+                    "<p>Log in with that email, then tap <b>Add another business</b> on your My businesses page. Everything stays under one account.</p>"
+                    "<a href='/login' style='" + btn + "'>&#128273; Log in</a>"
+                    "<a href='/new' style='" + btn + "'>Use a different email</a>")
+    except Exception as e:
+        print("dupe email check:", e)
+    return None
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
