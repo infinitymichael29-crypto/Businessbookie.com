@@ -99,7 +99,7 @@ def setup():
 <input type='hidden' name='shop' value='{escape(shop)}'><input type='hidden' name='owner' value='{escape(request.values.get('owner',''))}'><input type='hidden' name='btype' value='{escape(bt)}'><input type='hidden' name='btype' value='{escape(bt)}'>
 {rows}
 <p>Add your own, one per line: name | booking fee</p>
-<input name='addr' placeholder='Business address'><input name='bphone' type='tel' placeholder='Business phone (customers can call)' required>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
+<input name='addr' placeholder='Business address'><input name='bphone' type='tel' placeholder='Business phone (customers can call)' required><label style='display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#334;margin:6px 0 10px;line-height:1.4'><input type='checkbox' name='owner_sms' value='1' style='width:auto;margin:3px 0 0;flex:none'><span>Yes, text me new-booking and cancellation alerts from Business-Bookie at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. Optional. <a href='/privacy'>Privacy Policy</a> &middot; <a href='/terms'>Terms</a></span></label>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
 <input type='hidden' name='lat' id='glat'><input type='hidden' name='lng' id='glng'><button type='button' onclick='navigator.geolocation.getCurrentPosition(p=>(glat.value=p.coords.latitude,glng.value=p.coords.longitude,this.innerText="Location saved"))'>Use my location</button><p><b>Days you're open:</b></p><label style='margin-right:10px'><input type='checkbox' name='days' value='0' checked style='width:auto'> Mon</label><label style='margin-right:10px'><input type='checkbox' name='days' value='1' checked style='width:auto'> Tue</label><label style='margin-right:10px'><input type='checkbox' name='days' value='2' checked style='width:auto'> Wed</label><label style='margin-right:10px'><input type='checkbox' name='days' value='3' checked style='width:auto'> Thu</label><label style='margin-right:10px'><input type='checkbox' name='days' value='4' checked style='width:auto'> Fri</label><label style='margin-right:10px'><input type='checkbox' name='days' value='5'  style='width:auto'> Sat</label><label style='margin-right:10px'><input type='checkbox' name='days' value='6'  style='width:auto'> Sun</label><p>Opening time</p><input type='time' name='open' value='09:00'><p>Closing time</p><input type='time' name='close' value='17:00'><p>Appointment length</p><select name='slot'><option value='30'>30 minutes</option><option value='60'>1 hour</option><option value='90'>90 minutes</option><option value='120'>2 hours</option></select><button>Create my booking page</button></form>"""
 @app.route("/create", methods=["POST"])
 def create():
@@ -131,7 +131,7 @@ def create():
             svc[n.strip()] = int(p) if p.isdigit() else 0
     if not svc: svc["Appointment"] = 0
     tok = secrets.token_urlsafe(16)
-    d[sid] = {"live": bool(request.form.get("use_acct") == "1"), "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "bphone": request.form.get("bphone", "").strip()[:30], "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
+    d[sid] = {"live": bool(request.form.get("use_acct") == "1"), "token": tok, "name": request.form["shop"], "owner": request.form.get("owner", ""), "bphone": request.form.get("bphone", "").strip()[:30], "owner_sms": request.form.get("owner_sms") == "1", "addr": request.form.get("addr",""), "email": request.form.get("email",""), "pw": request.form.get("pw",""), "lat": request.form.get("lat",""), "lng": request.form.get("lng",""), "type": request.form.get("btype","Other"), "type": request.form.get("btype","Other"), "services": svc, "days": request.form.getlist("days"), "open": request.form.get("open","09:00"), "close": request.form.get("close","17:00"), "slot": request.form.get("slot","30"), "bookings": []}
     save(d)
     notify("New business signed up", request.form["shop"])
     notify("Confirm your business on Business-Bookie", "Tap to confirm and go live: " + request.host_url + "confirm/" + sid + "/" + tok + "\n\nYour QR code to print, customers scan it to book: " + request.host_url + "qr/" + sid, request.form["email"])
@@ -160,7 +160,7 @@ def book_page(sid):
     return S + f"""<h1>{escape(shop['name'])}</h1>{ow}<p>Location: {escape(shop.get('addr',''))}</p>{_bb_phone_html(shop)}{revs}{prices}<p>Book an appointment</p>
 <form method='post' action='/book/{sid}'>
 <input name='name' placeholder='Your name' required>
-<input name='phone' placeholder='Phone number' required>{_bb_guests_sel(shop)}{_bb_fee_box(shop)}<p style='font-size:12px;color:#556;margin:2px 0 8px'>By booking, you agree to receive appointment texts (reminders, confirmations, cancellations) at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. <a href='/privacy'>Privacy</a> &middot; <a href='/terms'>Terms</a></p>
+<input name='phone' placeholder='Phone number' required>{_bb_guests_sel(shop)}{_bb_fee_box(shop)}<label style='display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#334;margin:6px 0 10px;line-height:1.4'><input type='checkbox' name='sms_ok' value='1' style='width:auto;margin:3px 0 0;flex:none'><span>Yes, text me appointment confirmations, reminders and cancellation notices from Business-Bookie at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of booking. <a href='/privacy'>Privacy Policy</a> &middot; <a href='/terms'>Terms</a></span></label>
 <input name='email' type='email' placeholder='Email (we send your booking link)' required>
 <select name='service'>{opts}</select>
 {slots}
@@ -197,14 +197,14 @@ def book(sid):
             cs = stripe.checkout.Session.create(
                 mode="payment",
                 **_bb_pi(shop, fee), line_items=[{"price_data": {"currency": "usd", "product_data": {"name": s + " booking fee - " + shop["name"]}, "unit_amount": int(round(float(fee) * 100))}, "quantity": 1}],
-                metadata={"sid": sid, "name": request.form["name"], "phone": request.form["phone"], "service": s, "when": request.form["when"], "email": request.form.get("email", "")[:200]},
+                metadata={"sid": sid, "name": request.form["name"], "phone": request.form["phone"], "sms": request.form.get("sms_ok", ""), "service": s, "when": request.form["when"], "email": request.form.get("email", "")[:200]},
                 success_url=base + "/paid/" + sid + "?session_id={CHECKOUT_SESSION_ID}",
                 cancel_url=base + "/b/" + sid)
         except Exception as ex:
             return _bb_payerr(d, sid, shop, ex)
         return redirect(cs.url, code=303)
     rt = secrets.token_urlsafe(8)
-    shop["bookings"].append({"name": request.form["name"], "phone": request.form["phone"], "service": s, "when": request.form["when"], "fee": fee, "rt": rt, "email": request.form.get("email", "")})
+    shop["bookings"].append({"name": request.form["name"], "phone": request.form["phone"], "sms": request.form.get("sms_ok") == "1", "service": s, "when": request.form["when"], "fee": fee, "rt": rt, "email": request.form.get("email", "")})
     save(d)
     notify("New booking at " + shop["name"], request.form["name"] + " - " + s + " - " + request.form["when"] + " - " + request.form["phone"], shop.get("email") or GMAIL)
     if request.form.get("email"):
@@ -519,7 +519,7 @@ def paid(sid):
         save(d)
         return S + "<h1>Sorry, that time was just taken</h1><p>Someone booked it a moment before you. You've been refunded in full. It can take 5 to 10 business days to show on your card.</p><a href='/b/" + sid + "'>Pick another time</a>"
     if not ex:
-        shop["bookings"].append({"name": m["name"], "phone": m["phone"], "service": m["service"], "when": m["when"], "fee": fee, "paid": True, "paid_id": info["id"], "rt": rt, "email": m.get("email", ""), "pi": _bb_g(info, "payment_intent"), "keep": (_bb_pi(shop, fee).get("payment_intent_data") or {}).get("application_fee_amount")})
+        shop["bookings"].append({"name": m["name"], "phone": m["phone"], "sms": m.get("sms") == "1", "service": m["service"], "when": m["when"], "fee": fee, "paid": True, "paid_id": info["id"], "rt": rt, "email": m.get("email", ""), "pi": _bb_g(info, "payment_intent"), "keep": (_bb_pi(shop, fee).get("payment_intent_data") or {}).get("application_fee_amount")})
         save(d)
         notify("New PAID booking at " + shop["name"], m["name"] + " - " + m["service"] + " - " + m["when"] + " - " + m["phone"] + " - paid $" + ("%.2f" % fee), shop.get("email") or GMAIL)
         if m.get("email"):
@@ -614,6 +614,7 @@ def _bb_noshow(sid, rt):
         shop["bookings"].remove(b)
         b["noshow_at"] = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
         shop.setdefault("noshows", []).append(b)
+        _bb_noshow_alert(shop, sid, b)
         save(d)
         return redirect("/d/" + sid)
     if request.method == "POST" and a == "showed":
@@ -624,9 +625,11 @@ def _bb_noshow(sid, rt):
         w = request.form.get("when", "").replace("T", " ")[:16]
         try: datetime.strptime(w, "%Y-%m-%d %H:%M")
         except Exception: return S + "<h1>Pick a new date and time</h1><a href='/ns/" + sid + "/" + rt + "'>Back</a>"
-        b["when"] = w
-        b.pop("moved_from", None)
+        _e = _bb_propose(shop, sid, b, w, 'owner')
+        if _e:
+            return S + _e
         save(d)
+        return redirect('/d/' + sid)
         if b.get("email"):
             notify("Your appointment at " + shop["name"] + " was moved", "Your " + b.get("service", "") + " at " + shop["name"] + " is now:\n" + w + "\n\nNeed to change it? Use this link:\n" + request.host_url + "m/" + sid + "/" + rt, b["email"])
         return redirect("/d/" + sid)
@@ -1602,6 +1605,381 @@ def _bb_dupe_email():
     except Exception as e:
         print("dupe email check:", e)
     return None
+
+
+_BB_SMS_POLICY = ("<h3>Text messages (SMS)</h3><p>If you check the text-message box when booking or signing up, Business-Bookie sends appointment "
+                  "confirmations, reminders, cancellation notices and (for business owners) new-booking alerts to the number you give. Message frequency varies. "
+                  "Msg &amp; data rates may apply. Reply STOP to opt out at any time, or HELP for help. Consent to texts is not a condition of booking. "
+                  "<b>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.</b> "
+                  "Text-messaging opt-in data and consent are never shared with any third parties.</p>")
+
+
+@app.route("/sms")
+def bb_sms_info():
+    box = "background:#fff;border:1px solid #dfe5f1;border-radius:12px;padding:16px;margin:12px 0"
+    return (S + "<h1>Text message opt-in</h1>"
+            "<p>Business-Bookie lets customers book appointments with local businesses. Customers can choose to get text messages about their booking.</p>"
+            "<h3>How customers opt in</h3>"
+            "<p>On every business booking page (for example <a href='/find'>www.business-bookie.com/find</a> &rarr; pick a business), the customer enters their "
+            "name, email and mobile number. Under the phone field is a checkbox that is <b>unchecked by default</b>. Texts are only sent if the customer checks it. "
+            "Consent is not required to book.</p>"
+            "<div style='" + box + "'><p style='margin:0 0 6px;font-weight:700'>The booking form looks like this:</p>"
+            "<input placeholder='Your name' disabled><input placeholder='Email' disabled><input placeholder='Phone number' type='tel' disabled>"
+            "<label style='display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#334;margin:6px 0 10px;line-height:1.4'>"
+            "<input type='checkbox' disabled style='width:auto;margin:3px 0 0;flex:none'>"
+            "<span>Yes, text me appointment confirmations, reminders and cancellation notices from Business-Bookie at this number. "
+            "Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of booking. "
+            "<a href='/privacy'>Privacy Policy</a> &middot; <a href='/terms'>Terms</a></span></label></div>"
+            "<h3>How business owners opt in</h3>"
+            "<p>When a business signs up, the owner enters a business phone number and may check a separate, unchecked-by-default box to get new-booking and "
+            "cancellation alerts by text.</p>"
+            "<h3>Example messages</h3>"
+            "<div style='" + box + "'>Business-Bookie: You're booked at Island Cuts for Haircut on Dec 1 at 10:00 AM. Questions? Call (808) 555-0100. Reply STOP to opt out.</div>"
+            "<div style='" + box + "'>Business-Bookie reminder: Haircut at Island Cuts tomorrow at 10:00 AM. Manage your booking: https://www.business-bookie.com/m/... Reply STOP to opt out.</div>"
+            "<div style='" + box + "'>Business-Bookie: New booking at Island Cuts - Haircut, Dec 1 at 10:00 AM. Reply STOP to opt out.</div>"
+            "<h3>Opting out and help</h3><p>Reply <b>STOP</b> to any message to stop texts. Reply <b>HELP</b> for help. Message frequency varies. "
+            "Msg &amp; data rates may apply.</p>" + _BB_SMS_POLICY +
+            "<p><a href='/privacy'>Privacy Policy</a> &middot; <a href='/terms'>Terms of Service</a></p>")
+
+
+@app.after_request
+def _bb_privacy_sms(resp):
+    try:
+        if request.path == "/privacy" and resp.status_code == 200 and resp.mimetype == "text/html":
+            h = resp.get_data(as_text=True)
+            if "No mobile information will be shared" not in h:
+                h = h.replace("</body>", _BB_SMS_POLICY + "</body>", 1) if "</body>" in h else h + _BB_SMS_POLICY
+                resp.set_data(h)
+    except Exception as e:
+        print("privacy sms:", e)
+    return resp
+
+
+def _bb_fmt(w):
+    try:
+        x = datetime.strptime(w, "%Y-%m-%d %H:%M")
+        return x.strftime("%a %b %d, %I:%M %p").replace(" 0", " ")
+    except Exception:
+        return w or ""
+
+
+def _bb_noshow_alert(shop, sid, b):
+    try:
+        nm, sv, wh = b.get("name", ""), b.get("service", ""), _bb_fmt(b.get("when", ""))
+        ph = shop.get("bphone", "")
+        if b.get("email"):
+            notify("You missed your appointment at " + shop["name"],
+                   "Hi " + nm + ",\n\nYou were marked as a no-show for your " + sv + " at " + shop["name"] + " on " + wh + ".\n\n"
+                   "Under the cancellation and no-show terms you agreed to when booking, the booking fee is not refunded.\n\n"
+                   "Want to book again? " + request.host_url + "b/" + sid + ("\n\nQuestions? Call " + ph if ph else ""), b["email"])
+        notify("No-show recorded at " + shop["name"], nm + " - " + sv + " - " + wh + " was marked as a no-show. The customer has been notified by email.",
+               shop.get("email") or GMAIL)
+    except Exception as e:
+        print("noshow alert:", e)
+
+
+_bb_full_base = _bb_full
+
+
+def _bb_full(shop):
+    held = [{"when": x["prop"]["when"]} for x in shop.get("bookings", []) if x.get("prop")]
+    if not held:
+        return _bb_full_base(shop)
+    s2 = dict(shop)
+    s2["bookings"] = list(shop.get("bookings", [])) + held
+    return _bb_full_base(s2)
+
+
+def _bb_free_for(shop, b, w):
+    s2 = dict(shop)
+    s2["bookings"] = [dict(x, prop=None) if x is b else x for x in shop.get("bookings", [])]
+    try:
+        if _bb_blocked(shop, w):
+            return False
+    except Exception:
+        pass
+    return w not in _bb_full(s2)
+
+
+def _bb_neg_link(sid, b, role):
+    return request.host_url + "neg/" + sid + "/" + b.get("rt", "") + "?as=" + role
+
+
+def _bb_propose(shop, sid, b, w, role):
+    if w == b.get("when"):
+        return "<h1>That's already the booked time</h1><a href='/d/" + sid + "'>Back</a>"
+    if not _bb_free_for(shop, b, w):
+        return "<h1>That time is full or blocked</h1><p>Pick another time.</p><a href='javascript:history.back()'>Back</a>"
+    p = b.get("prop") or {"hist": []}
+    p["hist"] = (p.get("hist") or []) + [("Business" if role == "owner" else "Customer") + " suggested " + _bb_fmt(w)]
+    p["when"], p["by"] = w, role
+    b["prop"] = p
+    try:
+        if role == "owner" and b.get("email"):
+            notify(shop["name"] + " wants to move your appointment",
+                   "Hi " + b.get("name", "") + ",\n\n" + shop["name"] + " would like to move your " + b.get("service", "") + "\nfrom: " + _bb_fmt(b.get("when", "")) +
+                   "\nto:   " + _bb_fmt(w) + "\n\nAccept it, suggest a different time, or keep your original time here:\n" + _bb_neg_link(sid, b, "c"), b["email"])
+        elif role == "customer":
+            notify("Time change request at " + shop["name"],
+                   b.get("name", "") + " (" + b.get("service", "") + ") would like " + _bb_fmt(w) + " instead of " + _bb_fmt(b.get("when", "")) +
+                   ".\n\nAccept, suggest another time, or keep the original:\n" + _bb_neg_link(sid, b, "o"), shop.get("email") or GMAIL)
+    except Exception as e:
+        print("propose mail:", e)
+    return ""
+
+
+@app.route("/neg/<sid>/<rt>", methods=["GET", "POST"])
+def bb_negotiate(sid, rt):
+    d = load()
+    shop = d.get(sid)
+    b = next((x for x in (shop or {}).get("bookings", []) if x.get("rt") == rt), None)
+    if not shop or not b:
+        return S + "<h1>Booking not found</h1>", 404
+    role = "owner" if request.args.get("as") == "o" else "customer"
+    back = ("/d/" + sid) if role == "owner" else ("/m/" + sid + "/" + rt)
+    if role == "owner" and not _bb_ok(sid, "", shop):
+        return S + "<h1>Please log in first</h1><p>Log in to your business, then open this link again.</p><a href='/login'>Log in</a>"
+    other = "customer" if role == "owner" else "owner"
+    p = b.get("prop")
+    if request.method == "POST":
+        act = request.form.get("act", "")
+        if not p:
+            return redirect(request.full_path)
+        if act == "accept" and p.get("by") != role:
+            old = b.get("when", "")
+            b["moved_from"], b["when"] = old, p["when"]
+            b.pop("prop", None)
+            save(d)
+            msg = "Your " + b.get("service", "") + " at " + shop["name"] + " is now confirmed for " + _bb_fmt(b["when"]) + " (moved from " + _bb_fmt(old) + ")."
+            try:
+                if b.get("email"):
+                    notify("New time confirmed at " + shop["name"], "Hi " + b.get("name", "") + ",\n\n" + msg + "\n\nManage your booking: " + request.host_url + "m/" + sid + "/" + rt, b["email"])
+                notify("New time confirmed: " + b.get("name", ""), b.get("name", "") + " - " + b.get("service", "") + " moved from " + _bb_fmt(old) + " to " + _bb_fmt(b["when"]) + ".", shop.get("email") or GMAIL)
+            except Exception as e:
+                print("accept mail:", e)
+            return S + "<h1>&#9989; New time confirmed</h1><p>" + str(escape(msg)) + "</p><a href='" + back + "'>Back</a>"
+        if act == "keep":
+            b.pop("prop", None)
+            save(d)
+            try:
+                txt = "The time change for " + b.get("name", "") + " (" + b.get("service", "") + ") was called off. The appointment stays at " + _bb_fmt(b.get("when", "")) + "."
+                if role == "owner" and b.get("email"):
+                    notify("Your appointment at " + shop["name"] + " stays the same", "Hi " + b.get("name", "") + ",\n\n" + txt, b["email"])
+                elif role == "customer":
+                    notify("Time change declined: " + b.get("name", ""), txt, shop.get("email") or GMAIL)
+            except Exception as e:
+                print("keep mail:", e)
+            return S + "<h1>Original time kept</h1><p>The appointment stays at " + str(escape(_bb_fmt(b.get("when", "")))) + ".</p><a href='" + back + "'>Back</a>"
+        if act == "counter" and p.get("by") != role:
+            w = request.form.get("when", "")
+            if w not in [v for v, _ in build_slots(shop)] and not (role == "owner" and w):
+                return S + "<h1>That time isn't available</h1><a href='" + request.full_path + "'>Pick another</a>"
+            e = _bb_propose(shop, sid, b, w, role)
+            if e:
+                return S + e
+            save(d)
+            return S + "<h1>&#128257; Suggestion sent</h1><p>We sent " + ("the customer" if role == "owner" else shop["name"]) + " your suggested time: <b>" + str(escape(_bb_fmt(w))) + "</b>. You'll get an email when they answer.</p><a href='" + back + "'>Back</a>"
+        return redirect(request.full_path)
+    head = (S + "<h1>Time change</h1><p><b>" + str(escape(shop["name"])) + "</b><br>" + str(escape(b.get("name", ""))) + " - " + str(escape(b.get("service", ""))) +
+            "<br>Booked time: <b>" + str(escape(_bb_fmt(b.get("when", "")))) + "</b></p>")
+    if not p:
+        return head + "<p>There's no time change pending for this booking.</p><a href='" + back + "'>Back</a>"
+    hist = "<div class='card'><b>History</b><br>" + "<br>".join(str(escape(h)) for h in p.get("hist", [])) + "</div>"
+    who = "The business" if p.get("by") == "owner" else "The customer"
+    cur = "<div class='card' style='background:#fff6e5'><b>" + who + " suggested:</b><br><span style='font-size:22px;font-weight:800'>" + str(escape(_bb_fmt(p["when"]))) + "</span></div>"
+    keep = "<form method='post'><input type='hidden' name='act' value='keep'><button style='background:#fff;color:#1a6dff;border:2px solid #1a6dff'>&#10060; Keep the original time</button></form>"
+    if p.get("by") == role:
+        return head + cur + "<p>Waiting for the " + other + " to answer. We'll email you when they do.</p>" + keep + hist + "<a href='" + back + "'>Back</a>"
+    slots = [(v, lab) for v, lab in build_slots(shop) if v not in (b.get("when"), p["when"])]
+    acc = "<form method='post'><input type='hidden' name='act' value='accept'><button>&#9989; Accept " + str(escape(_bb_fmt(p["when"]))) + "</button></form>"
+    if slots:
+        ctr = ("<h3>&#128257; Suggest a different time</h3><form method='post'><input type='hidden' name='act' value='counter'><select name='when' required>" +
+               "".join("<option value='" + str(escape(v)) + "'>" + str(escape(lab)) + "</option>" for v, lab in slots) + "</select><button>Send my suggestion</button></form>")
+    else:
+        ctr = "<p>No other open times to suggest right now.</p>"
+    return head + cur + acc + ctr + "<h3>Or</h3>" + keep + hist + "<a href='" + back + "'>Back</a>"
+
+
+@app.after_request
+def _bb_neg_banners(resp):
+    try:
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        parts = request.path.strip("/").split("/")
+        if parts[0] == "d" and len(parts) == 2:
+            shop = load().get(parts[1]) or {}
+            pend = [x for x in shop.get("bookings", []) if x.get("prop")]
+            if pend:
+                rows = "".join("<a href='/neg/" + parts[1] + "/" + x.get("rt", "") + "?as=o' style='display:block;margin-top:6px;font-weight:700'>" +
+                               str(escape(x.get("name", ""))) + ": " + str(escape(_bb_fmt(x.get("when", "")))) + " &rarr; " + str(escape(_bb_fmt(x["prop"]["when"]))) +
+                               (" (your turn)" if x["prop"].get("by") == "customer" else " (waiting on customer)") + "</a>" for x in pend)
+                ban = "<div class='card' style='background:#fff6e5;border-left:6px solid #f0a500'><b>&#9203; Time changes pending</b>" + rows + "</div>"
+                h = resp.get_data(as_text=True)
+                if "<div class='wrap'>" in h:
+                    resp.set_data(h.replace("<div class='wrap'>", "<div class='wrap'>" + ban, 1))
+        elif parts[0] == "m" and len(parts) == 3:
+            shop = load().get(parts[1]) or {}
+            b = next((x for x in shop.get("bookings", []) if x.get("rt") == parts[2]), None)
+            if b and b.get("prop"):
+                ban = ("<div class='card' style='background:#fff6e5;border-left:6px solid #f0a500'><b>&#9203; Time change pending</b><br>" +
+                       ("The business suggested " if b["prop"].get("by") == "owner" else "You suggested ") + str(escape(_bb_fmt(b["prop"]["when"]))) +
+                       "<br><a href='/neg/" + parts[1] + "/" + parts[2] + "?as=c' style='font-weight:700'>Respond / view</a></div>")
+                h = resp.get_data(as_text=True)
+                i = h.find("</h1>")
+                resp.set_data(h[:i + 5] + ban + h[i + 5:] if i >= 0 else ban + h)
+    except Exception as e:
+        print("neg banner:", e)
+    return resp
+
+
+_BB_SW = ("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',e=>{});"
+          "self.addEventListener('push',e=>{let d={};try{d=e.data.json()}catch(x){d={title:'Business-Bookie',body:e.data?e.data.text():''}}"
+          "e.waitUntil(self.registration.showNotification(d.title||'Business-Bookie',{body:d.body||'',icon:'/icon-192.png',badge:'/favicon-32.png',data:{url:d.url||'/'}}))});"
+          "self.addEventListener('notificationclick',e=>{e.notification.close();e.waitUntil(clients.openWindow((e.notification.data&&e.notification.data.url)||'/'))});")
+
+
+def bb_sw_push():
+    return app.response_class(_BB_SW, mimetype="application/javascript")
+
+
+app.view_functions["bb_sw"] = bb_sw_push
+
+
+def _bb_push_send(subs, title, body, url):
+    import json as _j
+    priv = os.environ.get("VAPID_PRIVATE", "")
+    if not priv or not subs:
+        return
+    from pywebpush import webpush
+    data = _j.dumps({"title": title[:80], "body": body[:180], "url": url})
+    for s in subs:
+        try:
+            webpush(subscription_info=s, data=data, vapid_private_key=priv,
+                    vapid_claims={"sub": "mailto:" + globals().get("_BB_CONTACT", "infinitymichael29@gmail.com")}, timeout=10)
+        except Exception as e:
+            print("push send:", str(e)[:200])
+
+
+def _bb_push_for(subject, body, to):
+    import re, threading
+    if not os.environ.get("VAPID_PRIVATE"):
+        return
+    to = (to or "").strip().lower()
+    if not to:
+        return
+    subs, seen = [], set()
+    for shop in load().values():
+        cand = list(shop.get("push", [])) if (shop.get("email") or "").strip().lower() == to else []
+        for b in shop.get("bookings", []):
+            if (b.get("email") or "").strip().lower() == to:
+                cand += b.get("push", [])
+        for s in cand:
+            if s.get("endpoint") and s["endpoint"] not in seen:
+                seen.add(s["endpoint"])
+                subs.append(s)
+    if not subs:
+        return
+    m = re.search(r"https?://\S+", body or "")
+    url = m.group(0) if m else "/"
+    text = re.sub(r"https?://\S+", "", body or "").replace("\n", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    threading.Thread(target=_bb_push_send, args=(subs, subject, text, url), daemon=True).start()
+
+
+_bb_notify_push_old = notify
+
+
+def notify(subject, body, to=None):
+    r = _bb_notify_push_old(subject, body, to)
+    try:
+        _bb_push_for(subject, body, to or GMAIL)
+    except Exception as e:
+        print("push:", e)
+    return r
+
+
+@app.route("/push/sub", methods=["POST"])
+def bb_push_sub():
+    j = request.get_json(silent=True) or {}
+    sub, sid, rt, role = j.get("sub"), str(j.get("sid", "")), str(j.get("rt", "")), j.get("role", "")
+    if not isinstance(sub, dict) or not str(sub.get("endpoint", "")).startswith("https://"):
+        return "bad subscription", 400
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return "not found", 404
+    if role == "owner":
+        if not _bb_ok(sid, "", shop):
+            return "log in first", 403
+        tgt = shop
+    else:
+        tgt = next((b for b in shop.get("bookings", []) if b.get("rt") == rt), None)
+        if not tgt:
+            return "not found", 404
+    lst = [s for s in tgt.get("push", []) if s.get("endpoint") != sub["endpoint"]]
+    lst.append({"endpoint": sub["endpoint"], "keys": sub.get("keys", {})})
+    tgt["push"] = lst[-5:]
+    save(d)
+    return "ok"
+
+
+@app.route("/push/test/<sid>", methods=["POST"])
+def bb_push_test(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop or not _bb_ok(sid, "", shop):
+        return "log in first", 403
+    if not shop.get("push"):
+        return "no devices yet", 400
+    import threading
+    threading.Thread(target=_bb_push_send, args=(list(shop["push"]), "Business-Bookie test", "Notifications are working for " + shop.get("name", "your business") + ".", request.host_url + "d/" + sid), daemon=True).start()
+    return "sent"
+
+
+def _bb_push_box(sid, rt, role):
+    key = os.environ.get("VAPID_PUBLIC", "")
+    if not key:
+        return ""
+    test = ("<button type='button' onclick='bbPushTest()' style='margin-top:6px;background:#fff;color:#1a6dff;border:2px solid #1a6dff'>Send me a test notification</button>" if role == "owner" else "")
+    return ("<div class='card' id='bbpush'><b>&#128276; Notifications</b><div style='font-size:13px;color:#556;margin:4px 0'>" +
+            ("Get an alert on this phone for new bookings, time-change requests and cancellations." if role == "owner" else "Get an alert on this phone if your appointment changes.") +
+            "</div><button type='button' onclick='bbPush()'>&#128276; Turn on notifications</button>" + test + "<div id='bbps' style='font-size:13px;color:#556;margin-top:6px'></div></div>"
+            "<script>(function(){var K='" + key + "',SID='" + sid + "',RT='" + rt + "',ROLE='" + role + "';"
+            "function u(b){var p='='.repeat((4-b.length%4)%4),s=(b+p).replace(/-/g,'+').replace(/_/g,'/'),r=atob(s),o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o}"
+            "function say(t){document.getElementById('bbps').textContent=t}"
+            "window.bbPush=async function(){try{if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){say('This browser cannot show notifications. On iPhone, add this site to your Home Screen first, then open it from there.');return}"
+            "var p=await Notification.requestPermission();if(p!=='granted'){say('Notifications are blocked. Allow them for this site in your browser settings, then try again.');return}"
+            "var r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;"
+            "var s=await r.pushManager.getSubscription()||await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u(K)});"
+            "var x=await fetch('/push/sub',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sub:s.toJSON(),sid:SID,rt:RT,role:ROLE})});"
+            "say(x.ok?'\\u2705 Notifications are on for this device.':'Could not turn on notifications ('+(await x.text())+').')}catch(e){say('Could not turn on notifications: '+e)}};"
+            "window.bbPushTest=async function(){var x=await fetch('/push/test/'+SID,{method:'POST'});say(x.ok?'Test sent. It should pop up in a few seconds.':'Test failed: '+(await x.text()))};"
+            "})();</script>")
+
+
+@app.after_request
+def _bb_push_inject(resp):
+    try:
+        if resp.status_code != 200 or resp.mimetype != "text/html" or not os.environ.get("VAPID_PUBLIC"):
+            return resp
+        import re
+        h = resp.get_data(as_text=True)
+        if "id='bbpush'" in h:
+            return resp
+        parts = request.path.strip("/").split("/")
+        box = ""
+        if request.method == "GET" and parts[0] == "d" and len(parts) == 2 and "Block off time" in h:
+            box = _bb_push_box(parts[1], "", "owner")
+        else:
+            m = re.search(r"/(?:m|r|neg)/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", h if parts[0] != "m" else request.path)
+            if m and (parts[0] in ("m", "neg") or "booked" in h.lower()):
+                box = _bb_push_box(m.group(1), m.group(2), "customer")
+        if box:
+            i = h.rfind("</body>")
+            resp.set_data(h[:i] + box + h[i:] if i >= 0 else h + box)
+    except Exception as e:
+        print("push inject:", e)
+    return resp
 
 
 import os
