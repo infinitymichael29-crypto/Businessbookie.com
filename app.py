@@ -3600,6 +3600,78 @@ def _bb_run_reminders(host):
 # ===== END BB UPGRADE 2 =====
 
 
+# ===== BB UPGRADE 3: directions =====
+def _bb_dir_url(shop):
+    from urllib.parse import quote as _q
+    a = (shop or {}).get("addr", "").strip()
+    if a:
+        return "https://www.google.com/maps/dir/?api=1&destination=" + _q(a)
+    if shop and shop.get("lat") and shop.get("lng"):
+        return "https://www.google.com/maps/dir/?api=1&destination=" + _q(str(shop["lat"]) + "," + str(shop["lng"]))
+    return ""
+
+
+def _bb_dir_btn(shop):
+    u = _bb_dir_url(shop)
+    if not u:
+        return ""
+    return ("<a id='bbdir' href='" + str(escape(u)) + "' target='_blank' rel='noopener' style='display:block;text-align:center;padding:14px;margin:12px 0;"
+            "background:#1a6dff;color:#fff;border-radius:12px;text-decoration:none;font-weight:800;font-size:17px'>&#128205; Get directions</a>"
+            + ("<p style='text-align:center;font-size:13px;color:#556;margin:-6px 0 10px'>" + str(escape(shop.get("addr", ""))) + "</p>" if shop.get("addr") else ""))
+
+
+@app.after_request
+def _bb_dir_page(resp):
+    try:
+        if resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbdir'" in h:
+            return resp
+        p = request.path.strip("/").split("/")
+        sid = None
+        if len(p) == 3 and p[0] == "m":
+            sid = p[1]
+        elif len(p) == 2 and p[0] in ("book", "paid") and ("booked" in h.lower() or "you're all set" in h.lower()):
+            sid = p[1]
+        elif len(p) == 3 and p[0] == "line" and "your turn" in h.lower():
+            sid = p[1]
+        if not sid:
+            return resp
+        btn = _bb_dir_btn(load().get(sid) or {})
+        if not btn:
+            return resp
+        i = h.find("</p>", h.find("id='bbwith'")) + 4 if "id='bbwith'" in h else -1
+        if i < 4:
+            i = h.find("</h1>")
+            i = i + 5 if i >= 0 else 0
+        resp.set_data(h[:i] + btn + h[i:])
+    except Exception as ex:
+        print("dir page:", ex)
+    return resp
+
+
+_bb_notify_dir = notify
+
+
+def notify(subject, body, to=None):
+    try:
+        import re as _re
+        m_ = _re.search(r"/m/([A-Za-z0-9_-]+)/", body or "")
+        if m_ and "google.com/maps/dir" not in body:
+            shop = load().get(m_.group(1)) or {}
+            u = _bb_dir_url(shop)
+            if u and (to or "").lower() != (shop.get("email") or "").lower():
+                if "in about 2 hours" in body:
+                    body = body + "\n\nLeaving soon? Get directions: " + u
+                else:
+                    body = body + "\n\nGet directions: " + u
+    except Exception as ex:
+        print("dir mail:", ex)
+    return _bb_notify_dir(subject, body, to)
+# ===== END BB UPGRADE 3 =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
