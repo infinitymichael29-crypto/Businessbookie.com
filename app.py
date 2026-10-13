@@ -227,7 +227,7 @@ def dash(sid):
     link = request.host_url + "b/" + sid
     names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
     days = ", ".join(names[int(x)] for x in shop.get("days", [])) or "Not set"
-    hrs = days + " | " + shop.get("open", "") + " - " + shop.get("close", "")
+    hrs = _bb_hours_text(shop)
     ref = "<meta http-equiv='refresh' content='30;url=/d/" + sid + "?pw=" + quote(pw) + "'>"
     head = "<meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;font-family:system-ui,Arial;background:#eef3ff}.top{background:#1a6dff;color:#fff;padding:22px 18px}.top h1{margin:0;font-size:26px}.top p{margin:4px 0 0;opacity:.9}.wrap{padding:16px;max-width:460px;margin:auto}.card{background:#fff;padding:16px;border-radius:14px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08)}.big{font-size:34px;font-weight:800;color:#1a6dff}a{color:#1a6dff}.note{background:#fff3cd}</style>"
     note = "" if shop.get("live", True) else "<div class='card note'><b>&#9888; Confirm your email to go live.</b> Your business won't show in the directory until you tap the link we emailed you. Check spam too.<br><a href='/resend/" + sid + "' style='display:inline-block;margin-top:8px;font-weight:700'>Resend confirm link</a></div>"
@@ -370,9 +370,9 @@ def login():
         em = request.form.get("em", "")
         pw = request.form.get("pw", "")
         for sid, v in d.items():
-            if v.get("email") == em and v.get("pw") == pw:
+            if v.get("email") == em and _bb_pw_ok(v.get("pw"), pw):
                 for _k, _v in d.items():
-                    if _v.get("email") == em and _v.get("pw") == pw: _bb_sess["own_" + _k] = True
+                    if _v.get("email") == em and _bb_pw_ok(_v.get("pw"), pw): _bb_sess["own_" + _k] = True
                 return redirect("/mine?em=" + quote(em))
         return S + "<h1>Wrong email or password</h1><a href='/login'>Try again</a>"
     return S + "<h1>Business owner log in</h1><form method='post'><input name='em' type='email' placeholder='Email' required><input name='pw' type='password' placeholder='Password' required><button>Log in</button></form><p><a href='/forgot'>Forgot password?</a></p><p>New here? <a href='/new'>Create an account and set up your business</a></p><a href='/'>Back</a>"
@@ -383,7 +383,7 @@ def mine():
     d = load()
     em = request.args.get("em", "")
     pw = request.args.get("pw", "")
-    owned = [(sid, v) for sid, v in d.items() if em and v.get("email") == em and (pw and v.get("pw") == pw or _bb_sess.get("own_" + sid))]
+    owned = [(sid, v) for sid, v in d.items() if em and v.get("email") == em and (pw and _bb_pw_ok(v.get("pw"), pw) or _bb_sess.get("own_" + sid))]
     if not owned: return redirect("/login")
     head = "<meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;font-family:system-ui,Arial;background:#eef3ff}.top{background:#1a6dff;color:#fff;padding:22px 18px}.top h1{margin:0;font-size:26px}.wrap{padding:16px;max-width:460px;margin:auto}.card{display:block;background:#fff;padding:16px;border-radius:14px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08);color:#123;text-decoration:none}a{color:#1a6dff}</style>"
     _now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
@@ -409,7 +409,7 @@ app.secret_key = os.environ.get("SECRET_KEY") or app.secret_key or _bb_secrets.t
 def _bb_ok(sid, pw, shop):
     if _bb_sess.get("own_" + sid):
         return True
-    if pw and pw == (shop.get("pw") or DASH_PASS):
+    if pw and (_bb_pw_ok(shop.get("pw"), pw) if shop.get("pw") else pw == DASH_PASS):
         _bb_sess["own_" + sid] = True
         _bb_sess.permanent = True
         return True
@@ -429,13 +429,13 @@ def change_pw(sid):
     if request.method == "POST":
         old = request.form.get("old", "")
         new = request.form.get("new", "")
-        if old != d[sid].get("pw"):
+        if not _bb_pw_ok(d[sid].get("pw"), old):
             return S + "<h1>Current password is wrong</h1><a href='/pw/" + sid + "'>Try again</a>"
         if len(new) < 6 or new != request.form.get("new2", ""):
             return S + "<h1>New passwords must match and be at least 6 characters</h1><a href='/pw/" + sid + "'>Try again</a>"
         em = d[sid].get("email")
         for k, v in d.items():
-            if v.get("email") == em and v.get("pw") == old:
+            if v.get("email") == em and _bb_pw_ok(v.get("pw"), old):
                 v["pw"] = new
         save(d)
         _bb_sess["own_" + sid] = True
@@ -1168,6 +1168,11 @@ def _bb_edit(sid):
             shop["guests_on"] = f.get("guests_on") == "1"
             shop["tables"] = max(1, min(99, int(f.get("tables") or 5))) if (f.get("tables") or "5").strip().isdigit() else 5
             shop["deposit"] = int(f.get("deposit")) if (f.get("deposit") or "").strip().isdigit() else 25
+            shop["about"] = (f.get("about") or "").strip()[:600]
+            if f.get("photo_rm") == "1":
+                shop.pop("photo", None)
+            elif (f.get("photo_data") or "").startswith("data:image/jpeg;base64,") and len(f.get("photo_data")) < 450000:
+                shop["photo"] = f.get("photo_data")
             shop["days"] = f.getlist("days")
             shop["open"] = f.get("open", "09:00")
             shop["close"] = f.get("close", "17:00")
@@ -1980,6 +1985,993 @@ def _bb_push_inject(resp):
     except Exception as e:
         print("push inject:", e)
     return resp
+
+
+def _bb_is_hash(p):
+    return isinstance(p, str) and (p.startswith("pbkdf2:") or p.startswith("scrypt:"))
+
+
+def _bb_hash(p):
+    if not p or _bb_is_hash(p):
+        return p
+    from werkzeug.security import generate_password_hash
+    return generate_password_hash(p, method="pbkdf2:sha256")
+
+
+def _bb_pw_ok(stored, given):
+    if not stored or not given:
+        return False
+    if _bb_is_hash(stored):
+        from werkzeug.security import check_password_hash
+        try:
+            return check_password_hash(stored, given)
+        except Exception:
+            return False
+    import hmac
+    return hmac.compare_digest(str(stored), str(given))
+
+
+_bb_save_plain = save
+
+
+def save(d):
+    try:
+        for v in d.values():
+            if isinstance(v, dict) and v.get("pw") and not _bb_is_hash(v["pw"]):
+                v["pw"] = _bb_hash(v["pw"])
+    except Exception as e:
+        print("hash on save:", e)
+    return _bb_save_plain(d)
+
+
+_BB_FAILS = {}
+
+
+@app.before_request
+def _bb_login_guard():
+    try:
+        if request.method != "POST" or request.path != "/login":
+            return None
+        import time as _t
+        em = (request.form.get("em") or "").strip().lower()
+        pw = request.form.get("pw", "")
+        if not em:
+            return None
+        cnt, until = _BB_FAILS.get(em, (0, 0))
+        if until and _t.time() < until:
+            mins = int((until - _t.time()) // 60) + 1
+            return S + ("<h1>Too many tries</h1><p>For your security, log in is paused for this email for about " + str(mins) +
+                        " more minute" + ("s" if mins != 1 else "") + ".</p><p>Forgot your password? <a href='/forgot'>Reset it here</a>.</p><a href='/login'>Back</a>"), 429
+        ok = any((v.get("email") or "").strip().lower() == em and _bb_pw_ok(v.get("pw"), pw) for v in load().values())
+        if ok:
+            _BB_FAILS.pop(em, None)
+        else:
+            cnt += 1
+            _BB_FAILS[em] = (cnt, _t.time() + 15 * 60 if cnt >= 5 else 0)
+    except Exception as e:
+        print("login guard:", e)
+    return None
+
+
+def _bb_hst_now():
+    return datetime.utcnow() - timedelta(hours=10)
+
+
+def _bb_slot_min(shop):
+    for k in ("slot", "slot_min", "minutes"):
+        try:
+            v = int(shop.get(k) or 0)
+            if 5 <= v <= 600:
+                return v
+        except Exception:
+            pass
+    return 60
+
+
+def _bb_cal_times(shop, b):
+    st = datetime.strptime(b["when"], "%Y-%m-%d %H:%M") + timedelta(hours=10)
+    en = st + timedelta(minutes=_bb_slot_min(shop))
+    f = "%Y%m%dT%H%M%SZ"
+    return st.strftime(f), en.strftime(f)
+
+
+@app.route("/ics/<sid>/<rt>")
+def bb_ics(sid, rt):
+    shop = load().get(sid) or {}
+    b = next((x for x in shop.get("bookings", []) if x.get("rt") == rt), None)
+    if not b:
+        return S + "<h1>Booking not found</h1>", 404
+    try:
+        st, en = _bb_cal_times(shop, b)
+    except Exception:
+        return S + "<h1>This booking has no valid time</h1>", 400
+    esc = lambda s: str(s or "").replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+    desc = (b.get("service", "") + " at " + shop.get("name", "") + ("\nCall: " + shop["bphone"] if shop.get("bphone") else "") +
+            "\nManage your booking: " + request.host_url + "m/" + sid + "/" + rt)
+    ics = "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Business-Bookie//EN", "METHOD:PUBLISH", "BEGIN:VEVENT",
+        "UID:" + sid + "-" + rt + "@business-bookie.com", "DTSTAMP:" + datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+        "DTSTART:" + st, "DTEND:" + en,
+        "SUMMARY:" + esc(b.get("service", "Appointment") + " at " + shop.get("name", "")),
+        "LOCATION:" + esc(shop.get("addr", "")), "DESCRIPTION:" + esc(desc),
+        "BEGIN:VALARM", "TRIGGER:-PT2H", "ACTION:DISPLAY", "DESCRIPTION:" + esc("Appointment at " + shop.get("name", "")), "END:VALARM",
+        "END:VEVENT", "END:VCALENDAR", ""])
+    return app.response_class(ics, mimetype="text/calendar", headers={"Content-Disposition": "attachment; filename=appointment.ics"})
+
+
+def _bb_gcal_link(shop, b, sid, rt):
+    from urllib.parse import quote as _q
+    st, en = _bb_cal_times(shop, b)
+    return ("https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + _q(b.get("service", "Appointment") + " at " + shop.get("name", "")) +
+            "&dates=" + st + "/" + en + "&location=" + _q(shop.get("addr", "")) +
+            "&details=" + _q("Manage your booking: " + request.host_url + "m/" + sid + "/" + rt))
+
+
+def _bb_cal_box(sid, rt):
+    shop = load().get(sid) or {}
+    b = next((x for x in shop.get("bookings", []) if x.get("rt") == rt), None)
+    if not b:
+        return ""
+    try:
+        g = _bb_gcal_link(shop, b, sid, rt)
+    except Exception:
+        return ""
+    btn = "display:block;text-align:center;padding:12px;margin:6px 0;border:2px solid #1a6dff;border-radius:10px;text-decoration:none;font-weight:700"
+    return ("<div class='card' id='bbcal'><b>&#128197; Add to your calendar</b>"
+            "<a href='" + str(escape(g)) + "' target='_blank' rel='noopener' style='" + btn + "'>Google Calendar</a>"
+            "<a href='/ics/" + sid + "/" + rt + "' style='" + btn + "'>Apple / Outlook / other (.ics)</a></div>")
+
+
+@app.after_request
+def _bb_cal_inject(resp):
+    try:
+        if resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        import re
+        h = resp.get_data(as_text=True)
+        if "id='bbcal'" in h:
+            return resp
+        parts = request.path.strip("/").split("/")
+        m = None
+        if parts[0] == "m" and len(parts) == 3:
+            m = (parts[1], parts[2])
+        elif "booked" in h.lower():
+            x = re.search(r"/(?:m|r)/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", h)
+            m = (x.group(1), x.group(2)) if x else None
+        if m:
+            box = _bb_cal_box(m[0], m[1])
+            if box:
+                i = h.find("id='bbpush'")
+                i = h.rfind("<div", 0, i) if i >= 0 else h.rfind("</body>")
+                resp.set_data(h[:i] + box + h[i:] if i >= 0 else h + box)
+    except Exception as e:
+        print("cal inject:", e)
+    return resp
+
+
+_bb_notify_cal_old = notify
+
+
+def notify(subject, body, to=None):
+    try:
+        import re
+        m = re.search(r"(https?://[^\s/]+)/m/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", body or "")
+        if m and "/ics/" not in body:
+            body = body + "\n\nAdd it to your calendar: " + m.group(1) + "/ics/" + m.group(2) + "/" + m.group(3)
+    except Exception as e:
+        print("cal mail:", e)
+    return _bb_notify_cal_old(subject, body, to)
+
+
+_BB_REM = {"last": 0.0}
+
+
+def _bb_run_reminders(host):
+    now = _bb_hst_now()
+    d = load()
+    due = []
+    for sid, shop in d.items():
+        for b in shop.get("bookings", []):
+            if b.get("done") or not b.get("email") or not b.get("when"):
+                continue
+            try:
+                hrs = (datetime.strptime(b["when"], "%Y-%m-%d %H:%M") - now).total_seconds() / 3600
+            except Exception:
+                continue
+            if 20 <= hrs <= 24 and not b.get("rem24"):
+                b["rem24"] = True
+                due.append(("24", sid, shop, dict(b)))
+            elif 0 < hrs <= 2.5 and not b.get("rem2"):
+                b["rem2"] = True
+                b["rem24"] = True
+                due.append(("2", sid, shop, dict(b)))
+    if not due:
+        return 0
+    save(d)
+    for kind, sid, shop, b in due:
+        try:
+            wh = _bb_fmt(b["when"]) if "_bb_fmt" in globals() else b["when"]
+            when_word = "tomorrow" if kind == "24" else "in about 2 hours"
+            body = ("Hi " + b.get("name", "") + ",\n\nReminder: your " + b.get("service", "appointment") + " at " + shop.get("name", "") + " is " + when_word +
+                    " (" + wh + ")." + ("\nAddress: " + shop["addr"] if shop.get("addr") else "") +
+                    ("\nQuestions? Call " + shop["bphone"] if shop.get("bphone") else "") +
+                    "\n\nNeed to reschedule or cancel? " + host + "m/" + sid + "/" + b.get("rt", ""))
+            notify("Reminder: " + b.get("service", "your appointment") + " at " + shop.get("name", "") + " " + when_word, body, b["email"])
+        except Exception as e:
+            print("reminder send:", e)
+    return len(due)
+
+
+@app.route("/cron/reminders")
+def bb_cron_reminders():
+    import time as _t
+    _BB_REM["last"] = _t.time()
+    n = _bb_run_reminders(request.host_url)
+    return app.response_class("reminders sent: " + str(n) + "\n", mimetype="text/plain")
+
+
+@app.before_request
+def _bb_reminder_tick():
+    try:
+        import time as _t
+        if request.method == "GET" and _t.time() - _BB_REM["last"] > 300 and not request.path.startswith(("/cron/", "/sw.js", "/favicon", "/icon-", "/manifest")):
+            _BB_REM["last"] = _t.time()
+            _bb_run_reminders(request.host_url)
+    except Exception as e:
+        print("reminder tick:", e)
+    return None
+
+
+app.config["MAX_FORM_MEMORY_SIZE"] = 2000000
+
+
+_bb_bphone_in_old4 = _bb_bphone_in
+
+
+def _bb_bphone_in(shop):
+    has = bool(shop.get("photo"))
+    return (_bb_bphone_in_old4(shop) +
+            "<h3>Your page</h3><p>About your business (shows on your booking page)</p>"
+            "<textarea name='about' rows='4' maxlength='600' placeholder='What you do, specialties, parking tips...'>" + str(escape(shop.get("about", ""))) + "</textarea>"
+            "<p>Photo or logo</p>" + ("<img src='/photo/" + str(escape(shop.get("_sid", ""))) + "' style='max-width:160px;border-radius:10px;display:block;margin:4px 0' alt=''>" if has and shop.get("_sid") else "") +
+            "<input type='file' accept='image/*' id='bbphotofile'><input type='hidden' name='photo_data' id='bbphotodata'>"
+            "<div id='bbphotomsg' style='font-size:13px;color:#556'></div>" +
+            ("<label style='display:flex;gap:8px;align-items:center;font-size:14px'><input type='checkbox' name='photo_rm' value='1' style='width:auto'> Remove current photo</label>" if has else "") +
+            "<script>(function(){var f=document.getElementById('bbphotofile');if(!f)return;f.addEventListener('change',function(){var x=f.files[0];if(!x)return;"
+            "var r=new FileReader();r.onload=function(){var im=new Image();im.onload=function(){var m=800,w=im.width,h=im.height;if(w>m||h>m){var s=Math.min(m/w,m/h);w=Math.round(w*s);h=Math.round(h*s)}"
+            "var c=document.createElement('canvas');c.width=w;c.height=h;var g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,w,h);g.drawImage(im,0,0,w,h);"
+            "var u=c.toDataURL('image/jpeg',0.75);if(u.length>350000)u=c.toDataURL('image/jpeg',0.5);if(u.length>350000){document.getElementById('bbphotomsg').textContent='That photo is too big. Try a smaller one.';return}document.getElementById('bbphotodata').value=u;"
+            "document.getElementById('bbphotomsg').textContent='Photo ready. Tap Save to keep it.'};im.src=r.result};r.readAsDataURL(x)})})();</script>")
+
+
+@app.before_request
+def _bb_tag_sid():
+    try:
+        p = request.path.strip("/").split("/")
+        if len(p) == 2 and p[0] == "edit":
+            globals()["_BB_EDIT_SID"] = p[1]
+    except Exception:
+        pass
+    return None
+
+
+_bb_load_pg = load
+
+
+def load():
+    d = _bb_load_pg()
+    try:
+        sid = globals().get("_BB_EDIT_SID")
+        if sid and sid in d and isinstance(d[sid], dict):
+            d[sid]["_sid"] = sid
+    except Exception:
+        pass
+    return d
+
+
+_bb_save_pg = save
+
+
+def save(d):
+    try:
+        for v in d.values():
+            if isinstance(v, dict):
+                v.pop("_sid", None)
+    except Exception:
+        pass
+    return _bb_save_pg(d)
+
+
+@app.route("/photo/<sid>")
+def bb_photo(sid):
+    import base64
+    shop = load().get(sid) or {}
+    p = shop.get("photo") or ""
+    if not p.startswith("data:image/jpeg;base64,"):
+        return "", 404
+    try:
+        data = base64.b64decode(p.split(",", 1)[1])
+    except Exception:
+        return "", 404
+    r = app.response_class(data, mimetype="image/jpeg")
+    r.headers["Cache-Control"] = "public, max-age=300"
+    return r
+
+
+def _bb_page_extras(sid, shop):
+    from urllib.parse import quote as _q
+    out = ""
+    if shop.get("photo"):
+        out += "<img src='/photo/" + sid + "' alt='" + str(escape(shop.get("name", ""))) + "' style='width:100%;max-height:260px;object-fit:cover;border-radius:14px;margin:6px 0 10px'>"
+    if shop.get("about"):
+        out += "<p style='white-space:pre-line;line-height:1.5'>" + str(escape(shop["about"])) + "</p>"
+    if shop.get("addr"):
+        out += ("<a href='https://www.google.com/maps/search/?api=1&query=" + _q(shop["addr"]) + "' target='_blank' rel='noopener' "
+                "style='display:inline-block;margin:2px 0 10px;font-weight:700'>&#128205; Get directions</a>")
+    return out
+
+
+@app.after_request
+def _bb_page_inject(resp):
+    try:
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        p = request.path.strip("/").split("/")
+        if len(p) == 2 and p[0] == "b":
+            shop = load().get(p[1])
+            if not shop:
+                return resp
+            h = resp.get_data(as_text=True)
+            if "id='bbpage'" in h:
+                return resp
+            ex = _bb_page_extras(p[1], shop)
+            if ex:
+                i = h.find("</h1>")
+                if i >= 0:
+                    h = h[:i + 5] + "<div id='bbpage'>" + ex + "</div>" + h[i + 5:]
+            nm = str(escape(shop.get("name", "Business-Bookie")))
+            ds = str(escape((shop.get("about") or "Book an appointment online with " + shop.get("name", "us") + ".")[:200]))
+            img = request.host_url + ("photo/" + p[1] if shop.get("photo") else "icon-512.png")
+            og = ("<meta property='og:type' content='website'><meta property='og:title' content='" + nm + " | Book online'>"
+                  "<meta property='og:description' content='" + ds + "'><meta property='og:image' content='" + img + "'>"
+                  "<meta property='og:url' content='" + request.base_url + "'><meta name='description' content='" + ds + "'>"
+                  "<meta name='twitter:card' content='summary_large_image'>")
+            h = h.replace("</head>", og + "</head>", 1) if "</head>" in h else og + h
+            resp.set_data(h)
+        elif request.path == "/":
+            h = resp.get_data(as_text=True)
+            if "og:title" not in h:
+                og = ("<meta property='og:type' content='website'><meta property='og:title' content='Business-Bookie | Online booking for local businesses'>"
+                      "<meta property='og:description' content='Book appointments with local businesses, or sign up your business for free.'>"
+                      "<meta property='og:image' content='" + request.host_url + "icon-512.png'><meta name='description' content='Book appointments with local businesses, or sign up your business for free.'>")
+                h = h.replace("</head>", og + "</head>", 1) if "</head>" in h else og + h
+                resp.set_data(h)
+    except Exception as e:
+        print("page inject:", e)
+    return resp
+
+
+# ===== BB UPGRADE: hours per day, service length, waitlist, owner stats, time zones =====
+_BB_F = "%Y-%m-%d %H:%M"
+_BB_DAYN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+_BB_TZS = [("Pacific/Honolulu", "Hawaii", -10, False), ("America/Anchorage", "Alaska", -9, True),
+           ("America/Los_Angeles", "Pacific", -8, True), ("America/Phoenix", "Arizona", -7, False),
+           ("America/Denver", "Mountain", -7, True), ("America/Chicago", "Central", -6, True),
+           ("America/New_York", "Eastern", -5, True)]
+_BB_DURS = [15, 20, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300, 360, 480]
+
+
+def _bb_tzinfo(shop):
+    k = (shop or {}).get("tz") or "Pacific/Honolulu"
+    for t in _BB_TZS:
+        if t[0] == k:
+            return t
+    return _BB_TZS[0]
+
+
+def _bb_nth_sunday(y, mo, n):
+    d = datetime(y, mo, 1)
+    d += timedelta(days=(6 - d.weekday()) % 7)
+    return d + timedelta(days=7 * (n - 1))
+
+
+def _bb_is_dst(local_std):
+    y = local_std.year
+    return _bb_nth_sunday(y, 3, 2).replace(hour=2) <= local_std < _bb_nth_sunday(y, 11, 1).replace(hour=1)
+
+
+def _bb_utc_off(shop, utc):
+    t = _bb_tzinfo(shop)
+    return t[2] + (1 if t[3] and _bb_is_dst(utc + timedelta(hours=t[2])) else 0)
+
+
+def _bb_local_now(shop):
+    u = datetime.utcnow()
+    return u + timedelta(hours=_bb_utc_off(shop, u))
+
+
+def _bb_local_to_utc(shop, loc):
+    t = _bb_tzinfo(shop)
+    return loc - timedelta(hours=t[2] + (1 if t[3] and _bb_is_dst(loc) else 0))
+
+
+def _bb_hm(s):
+    try:
+        h, m = [int(x) for x in str(s).split(":")[:2]]
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return (h, m)
+    except Exception:
+        pass
+    return None
+
+
+def _bb_hours(shop):
+    out = {}
+    hv = shop.get("hours")
+    if isinstance(hv, dict) and hv:
+        for k, v in hv.items():
+            try:
+                i, o, c = int(k), _bb_hm(v[0]), _bb_hm(v[1])
+                if o and c and 0 <= i <= 6 and c > o:
+                    out[i] = (o, c)
+            except Exception:
+                pass
+        if out:
+            return out
+    try:
+        days = [int(x) for x in shop.get("days", [])] or [0, 1, 2, 3, 4]
+    except Exception:
+        days = [0, 1, 2, 3, 4]
+    o = _bb_hm(shop.get("open", "09:00")) or (9, 0)
+    c = _bb_hm(shop.get("close", "17:00")) or (17, 0)
+    return {i: (o, c) for i in days if 0 <= i <= 6}
+
+
+def _bb_t12(hm):
+    h, m = hm
+    return "%d:%02d %s" % ((h % 12) or 12, m, "AM" if h < 12 else "PM")
+
+
+def _bb_hours_text(shop, sep=" · "):
+    hrs = _bb_hours(shop)
+    groups = []
+    for i in range(7):
+        v = hrs.get(i)
+        if groups and groups[-1][2] == v and groups[-1][1] == i - 1:
+            groups[-1][1] = i
+        else:
+            groups.append([i, i, v])
+    parts = []
+    for a, b, v in groups:
+        if v:
+            nm = _BB_DAYN[a] if a == b else _BB_DAYN[a] + "–" + _BB_DAYN[b]
+            parts.append(nm + " " + _bb_t12(v[0]) + "–" + _bb_t12(v[1]))
+    txt = sep.join(parts) or "Not set"
+    if _bb_tzinfo(shop)[0] != "Pacific/Honolulu":
+        txt += " (" + _bb_tzinfo(shop)[1] + " time)"
+    return txt
+
+
+def _bb_step(shop):
+    try:
+        v = int(shop.get("slot") or 30)
+        return v if 5 <= v <= 600 else 30
+    except Exception:
+        return 30
+
+
+def _bb_dur(shop, svc):
+    try:
+        v = int((shop.get("dur") or {}).get(svc) or 0)
+        if 5 <= v <= 720:
+            return v
+    except Exception:
+        pass
+    return 0
+
+
+def _bb_len(shop, svc):
+    return _bb_dur(shop, svc) or _bb_step(shop)
+
+
+def _bb_len_txt(m):
+    if m < 60:
+        return str(m) + " min"
+    return (str(m // 60) + " hr" + (" " + str(m % 60) + " min" if m % 60 else ""))
+
+
+def _bb_gv(k):
+    try:
+        from flask import g
+        return g.get(k)
+    except Exception:
+        return None
+
+
+def _bb_pdt(w):
+    try:
+        return datetime.strptime(str(w).replace("T", " ")[:16], _BB_F)
+    except Exception:
+        return None
+
+
+def _bb_is_cxl(b):
+    return bool(b.get("cancelled") or b.get("canceled") or str(b.get("status", "")).lower().startswith("cancel"))
+
+
+def _bb_full_base(shop):
+    cap = 1
+    if _bb_guests_on(shop):
+        try:
+            cap = max(1, int(shop.get("tables") or 5))
+        except Exception:
+            cap = 5
+    skip = _bb_gv("bb_skip_rt")
+    c = {}
+    for x in shop.get("bookings", []):
+        if (skip and x.get("rt") == skip) or _bb_is_cxl(x):
+            continue
+        w = x.get("when")
+        st = _bb_pdt(w)
+        keys = {w}
+        if st:
+            en = st + timedelta(minutes=_bb_len(shop, x.get("service")))
+            t = st - timedelta(minutes=st.minute % 5)
+            while t < en:
+                keys.add(t.strftime(_BB_F))
+                t += timedelta(minutes=5)
+        for k in keys:
+            c[k] = c.get(k, 0) + 1
+    return {w for w, k in c.items() if k >= cap}
+
+
+def _bb_range_ok(shop, st, ln, taken=None, check_blocks=False):
+    if taken is None:
+        taken = _bb_full(shop)
+    if st.strftime(_BB_F) in taken:
+        return False
+    en = st + timedelta(minutes=ln)
+    t = st - timedelta(minutes=st.minute % 5)
+    while t < en:
+        if t.strftime(_BB_F) in taken:
+            return False
+        t += timedelta(minutes=5)
+    if check_blocks:
+        t = st + timedelta(minutes=_bb_step(shop))
+        while t < en:
+            try:
+                if _bb_blocked(shop, t.strftime(_BB_F)):
+                    return False
+            except Exception:
+                pass
+            t += timedelta(minutes=_bb_step(shop))
+    return True
+
+
+def _bb_slots_for(shop, svc=None):
+    hrs = _bb_hours(shop)
+    step = _bb_step(shop)
+    exact = _bb_dur(shop, svc) if svc else 0
+    ln = exact or step
+    taken = _bb_full(shop)
+    now = _bb_local_now(shop)
+    out = []
+    for dd in range(14):
+        day = now + timedelta(days=dd)
+        wd = day.weekday()
+        if wd not in hrs:
+            continue
+        (oh, om), (ch, cm) = hrs[wd]
+        cur = day.replace(hour=oh, minute=om, second=0, microsecond=0)
+        end = day.replace(hour=ch, minute=cm, second=0, microsecond=0)
+        while cur < end:
+            if cur > now and (not exact or cur + timedelta(minutes=exact) <= end) and _bb_range_ok(shop, cur, ln, taken, bool(exact)):
+                out.append((cur.strftime(_BB_F), _BB_DAYN[wd] + " " + day.strftime("%b %d") + " at " + cur.strftime("%I:%M %p")))
+            cur += timedelta(minutes=step)
+    return out
+
+
+def _bb_build_slots_orig(shop):
+    return _bb_slots_for(shop, _bb_gv("bb_svc"))
+
+
+def _bb_open_days(shop, n=14):
+    hrs = _bb_hours(shop)
+    now = _bb_local_now(shop)
+    out = []
+    for dd in range(n):
+        day = now + timedelta(days=dd)
+        if day.weekday() in hrs:
+            out.append((day.strftime("%Y-%m-%d"), _BB_DAYN[day.weekday()] + " " + day.strftime("%b %d")))
+    return out
+
+
+def _bb_hours_from_form(f):
+    hours = {}
+    on = f.getlist("hd")
+    for i in range(7):
+        if str(i) not in on:
+            continue
+        o, c = _bb_hm(f.get("ho_%d" % i)), _bb_hm(f.get("hc_%d" % i))
+        if not o or not c:
+            return None, "Set opening and closing times for " + _BB_DAYN[i] + "."
+        if c <= o:
+            return None, "On " + _BB_DAYN[i] + ", closing time must be after opening time."
+        hours[str(i)] = ["%02d:%02d" % o, "%02d:%02d" % c]
+    return hours, ""
+
+
+@app.before_request
+def _bb_v2_before():
+    try:
+        from flask import g
+        p = request.path.strip("/").split("/")
+        if request.method == "POST" and len(p) == 2 and p[0] == "book":
+            g.bb_svc = request.form.get("service")
+            shop = load().get(p[1])
+            st = _bb_pdt(request.form.get("when", ""))
+            if shop and st and not _bb_range_ok(shop, st, _bb_len(shop, g.bb_svc), None, bool(_bb_dur(shop, g.bb_svc))):
+                return _bb_taken(p[1], shop)
+        elif len(p) == 3 and p[0] in ("m", "neg"):
+            g.bb_skip_rt = p[2]
+            shop = load().get(p[1]) or {}
+            b = next((x for x in shop.get("bookings", []) if x.get("rt") == p[2]), None)
+            if b:
+                g.bb_svc = b.get("service")
+        elif request.method == "POST" and len(p) == 2 and p[0] == "edit" and request.form.get("bb_hours") == "1":
+            sid = p[1]
+            if not _bb_sess.get("own_" + sid):
+                return None
+            f = request.form
+            hours, err = _bb_hours_from_form(f)
+            if err:
+                return S + "<h1>Hours not saved</h1><p>" + str(escape(err)) + "</p><a href='javascript:history.back()'>Go back</a>"
+            if not hours:
+                return None
+            d = load()
+            shop = d.get(sid)
+            if not shop:
+                return None
+            names = set()
+            i = 0
+            while ("sn%d" % i) in f:
+                n = f.get("sn%d" % i, "").strip()[:60]
+                if n and not f.get("sx%d" % i):
+                    names.add(n)
+                i += 1
+            if not names:
+                names = set((shop.get("services") or {}).keys())
+            dur = {}
+            i = 0
+            while ("durn_%d" % i) in f:
+                n = f.get("durn_%d" % i, "")
+                v = f.get("dur_%d" % i, "")
+                if n in names and v.isdigit() and 5 <= int(v) <= 720:
+                    dur[n] = int(v)
+                i += 1
+            shop["hours"] = hours
+            shop["dur"] = dur
+            tz = f.get("tz", "")
+            if any(t[0] == tz for t in _BB_TZS):
+                shop["tz"] = tz
+            save(d)
+            from werkzeug.datastructures import ImmutableMultiDict
+            _f = f.to_dict(flat=False)
+            _f["days"] = sorted(hours.keys())
+            _f["open"] = [min(v[0] for v in hours.values())]
+            _f["close"] = [max(v[1] for v in hours.values())]
+            request.form = ImmutableMultiDict([(k, v) for k, vs in _f.items() for v in vs])
+    except Exception as e:
+        print("v2 before:", e)
+    return None
+
+
+_bb_bphone_in_old5 = _bb_bphone_in
+
+
+def _bb_bphone_in(shop):
+    base = _bb_bphone_in_old5(shop)
+    if not isinstance(shop, dict) or "services" not in shop:
+        return base
+    e = lambda s: str(escape(s))
+    hrs = _bb_hours(shop)
+    ti = "style='width:auto;display:inline-block;margin:2px 4px'"
+    rows = ""
+    for i in range(7):
+        v = hrs.get(i)
+        o = "%02d:%02d" % v[0] if v else "09:00"
+        c = "%02d:%02d" % v[1] if v else "17:00"
+        rows += ("<div style='display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:6px 0;border-bottom:1px solid #eef'>"
+                 "<label style='display:flex;align-items:center;gap:6px;min-width:70px;font-weight:700'><input type='checkbox' name='hd' value='" + str(i) + "'" + (" checked" if v else "") + " style='width:auto'> " + _BB_DAYN[i] + "</label>"
+                 "<input type='time' name='ho_%d' value='%s' %s> to <input type='time' name='hc_%d' value='%s' %s></div>" % (i, o, ti, i, c, ti))
+    svs = ""
+    for j, n in enumerate((shop.get("services") or {}).keys()):
+        cur = _bb_dur(shop, n)
+        op = "<option value=''>Same as time slot (" + str(_bb_step(shop)) + " min)</option>" + "".join(
+            "<option value='" + str(m) + "'" + (" selected" if m == cur else "") + ">" + _bb_len_txt(m) + "</option>" for m in _BB_DURS)
+        svs += ("<div style='margin:6px 0'><b>" + e(n) + "</b><input type='hidden' name='durn_%d' value='%s'><select name='dur_%d'>%s</select></div>" % (j, e(n), j, op))
+    tzo = "".join("<option value='" + t[0] + "'" + (" selected" if t[0] == _bb_tzinfo(shop)[0] else "") + ">" + t[1] + "</option>" for t in _BB_TZS)
+    js = ("<script>document.addEventListener('DOMContentLoaded',function(){var sec=document.getElementById('bbhrs');if(!sec)return;var f=sec.closest('form');if(!f)return;"
+          "var els=[].slice.call(f.querySelectorAll('input[name=days],input[name=open],input[name=close]')).filter(function(x){return !sec.contains(x)});if(!els.length)return;"
+          "var hide=function(x){if(x&&!x.contains(sec)&&!sec.contains(x))x.style.display='none'};"
+          "var first=els[0].closest('label')||els[0];var cap=first.previousElementSibling;var anchor=first;"
+          "if(cap&&!cap.querySelector('input,select,textarea')&&/^(P|B|DIV|SPAN|LABEL)$/.test(cap.tagName)){anchor=cap}"
+          "var hd=anchor.previousElementSibling;if(hd&&/^H[1-6]$/.test(hd.tagName)&&/hour/i.test(hd.textContent)){hide(hd);}"
+          "anchor.parentNode.insertBefore(sec,anchor);"
+          "els.forEach(function(x){x.required=false;var l=x.closest('label');var t=(l&&l!==f)?l:x;hide(t);var p=t.previousElementSibling;"
+          "if(p&&p!==sec&&!p.querySelector('input,select,textarea')&&/^(P|B|SPAN)$/.test(p.tagName))hide(p)});"
+          "var sl=f.querySelector('select[name=slot]'),dh=document.getElementById('bbdurh');if(sl&&dh){var sp=sl.previousElementSibling;"
+          "if(sp&&sp.tagName==='P'){sp.textContent='Booking times start every';dh.parentNode.insertBefore(sp,dh)}dh.parentNode.insertBefore(sl,dh)}});</script>")
+    return (base + "<div id='bbhrs'><input type='hidden' name='bb_hours' value='1'>"
+            "<h3>Open hours</h3><p style='font-size:13px;color:#556'>Tick the days you're open and set the hours for each day.</p>" + rows +
+            "<p>Time zone</p><select name='tz'>" + tzo + "</select>"
+            "<h3 id='bbdurh'>How long each service takes</h3><p style='font-size:13px;color:#556'>Longer services block more time, so nobody gets booked on top of them. New services can be set after you save.</p>" + svs +
+            "</div>" + js)
+
+
+def _bb_svc_script(shop):
+    import json
+    data, lens = {}, {}
+    for n in (shop.get("services") or {}).keys():
+        m = _bb_dur(shop, n)
+        if m:
+            lens[n] = _bb_len_txt(m)
+            data[n] = [v for v, _ in _bb_slots_for(shop, n) if not _bb_blocked(shop, v)]
+    if not lens:
+        return ""
+    js = json.dumps({"d": data, "n": lens}).replace("</", "<\\/")
+    return ("<script>(function(){var X=" + js + ",s=document.querySelector('select[name=service]'),w=document.querySelector('select[name=when]');if(!s||!w)return;"
+            "[].forEach.call(s.options,function(o){if(X.n[o.value])o.text+=' ('+X.n[o.value]+')'});"
+            "var all=[].map.call(w.options,function(o){return [o.value,o.text]});"
+            "function f(){var ok=X.d[s.value];w.innerHTML='';all.forEach(function(a){if(!ok||ok.indexOf(a[0])>=0){var o=document.createElement('option');o.value=a[0];o.text=a[1];w.appendChild(o)}});"
+            "if(!w.options.length){var o=document.createElement('option');o.value='';o.text='No open times for this service. Try the waitlist below.';w.appendChild(o)}}"
+            "s.addEventListener('change',f);f()})();</script>")
+
+
+def _bb_wait_form(sid, shop):
+    e = lambda s: str(escape(s))
+    days = _bb_open_days(shop)
+    if not days:
+        return ""
+    so = "".join("<option value='" + e(n) + "'>" + e(n) + "</option>" for n in (shop.get("services") or {}).keys())
+    do = "".join("<option value='" + v + "'>" + lab + "</option>" for v, lab in days)
+    return ("<div id='bbwait' style='background:#f4f7ff;border:1px solid #cfdcff;border-radius:12px;padding:14px;margin:16px 0'>"
+            "<b>&#9203; Can't find a time that works?</b><p style='font-size:14px;margin:6px 0'>Join the waitlist. If a spot opens up on your day, we'll email you right away.</p>"
+            "<form method='post' action='/wait/" + sid + "'><select name='date' required>" + do + "</select><select name='service'>" + so + "</select>"
+            "<input name='name' placeholder='Your name' required><input name='email' type='email' placeholder='Email' required>"
+            "<input name='phone' placeholder='Phone (optional)'><button>Join the waitlist</button></form></div>")
+
+
+_bb_page_extras_old2 = _bb_page_extras
+
+
+def _bb_page_extras(sid, shop):
+    out = _bb_page_extras_old2(sid, shop)
+    try:
+        out += "<p style='font-size:14px;color:#334'><b>&#128336; Hours:</b> " + str(escape(_bb_hours_text(shop))) + "</p>"
+    except Exception as ex:
+        print("hours text:", ex)
+    return out
+
+
+@app.after_request
+def _bb_v2_page(resp):
+    try:
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        p = request.path.strip("/").split("/")
+        if len(p) != 2 or p[0] not in ("b", "d"):
+            return resp
+        h = resp.get_data(as_text=True)
+        shop = load().get(p[1])
+        if not shop:
+            return resp
+        if p[0] == "b" and "id='bbwait'" not in h:
+            i = h.find("action='/book/")
+            j = h.find("</form>", i) if i >= 0 else -1
+            add = _bb_wait_form(p[1], shop) + _bb_svc_script(shop)
+            h = h[:j + 7] + add + h[j + 7:] if j >= 0 else h + add
+            resp.set_data(h)
+        elif p[0] == "d" and "total bookings" in h and "id='bbstats'" not in h:
+            add = _bb_stats_html(shop) + _bb_wait_owner(shop)
+            i = h.find("total bookings</div>")
+            i = i + len("total bookings</div>") if i >= 0 else -1
+            h = h[:i] + add + h[i:] if i >= 0 else h + add
+            resp.set_data(h)
+    except Exception as ex:
+        print("v2 page:", ex)
+    return resp
+
+
+def _bb_stats_html(shop):
+    now = _bb_local_now(shop)
+    wk0 = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    wk1 = wk0 + timedelta(days=7)
+    up = wk = mo = 0
+    money = 0.0
+    svc, dow = {}, [0] * 7
+    for b in shop.get("bookings", []):
+        st = _bb_pdt(b.get("when"))
+        if not st or _bb_is_cxl(b):
+            continue
+        if st >= now:
+            up += 1
+        if wk0 <= st < wk1:
+            wk += 1
+        if st.year == now.year and st.month == now.month:
+            mo += 1
+            try:
+                money += float(b.get("fee") or 0)
+            except Exception:
+                pass
+            sv = b.get("service") or "Other"
+            svc[sv] = svc.get(sv, 0) + 1
+        dow[st.weekday()] += 1
+    box = "flex:1;min-width:40%;background:#f4f7ff;border-radius:10px;padding:10px;text-align:center"
+    num = "font-size:26px;font-weight:800;color:#1a6dff"
+    cell = lambda n, lab: "<div style='" + box + "'><div style='" + num + "'>" + n + "</div><div style='font-size:13px'>" + lab + "</div></div>"
+    top = sorted(svc.items(), key=lambda x: -x[1])[:3]
+    tops = ", ".join(str(escape(k)) + " (" + str(v) + ")" for k, v in top) or "None yet"
+    busy = _BB_DAYN[dow.index(max(dow))] if max(dow) else "Not enough data yet"
+    return ("<div class='card' id='bbstats'><b>&#128202; Your numbers</b><div style='display:flex;flex-wrap:wrap;gap:8px;margin-top:8px'>" +
+            cell(str(up), "upcoming") + cell(str(wk), "this week") + cell(str(mo), "this month") + cell("$%.0f" % money, "booked this month") +
+            "</div><p style='font-size:14px;margin:10px 0 0'><b>Top services this month:</b> " + tops + "<br><b>Busiest day:</b> " + busy + "</p></div>")
+
+
+def _bb_wait_owner(shop):
+    today = _bb_local_now(shop).strftime("%Y-%m-%d")
+    w = [x for x in shop.get("wait", []) if x.get("date", "") >= today]
+    if not w:
+        return ""
+    e = lambda s: str(escape(s))
+    rows = "".join("<p style='margin:6px 0;font-size:14px'><b>" + e(x.get("name", "")) + "</b> - " + e(x.get("service", "")) + " on " + e(x.get("date", "")) +
+                   "<br>" + e(x.get("email", "")) + (" &middot; " + e(x["phone"]) if x.get("phone") else "") + "</p>" for x in sorted(w, key=lambda x: x.get("date", "")))
+    return ("<div class='card' id='bbwaitlist'><b>&#9203; Waitlist (" + str(len(w)) + ")</b><p style='font-size:13px;color:#556;margin:4px 0'>"
+            "These customers get an email automatically if a spot opens on their day.</p>" + rows + "</div>")
+
+
+@app.route("/wait/<sid>", methods=["POST"])
+def bb_wait(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop:
+        return S + "<h1>Not found</h1>", 404
+    f = request.form
+    nm = (f.get("name") or "").strip()[:80]
+    em = (f.get("email") or "").strip()[:200]
+    dt = (f.get("date") or "")[:10]
+    sv = (f.get("service") or "").strip()[:60]
+    back = "<a href='/b/" + sid + "'>Back to booking page</a>"
+    if not nm or "@" not in em or dt not in [v for v, _ in _bb_open_days(shop, 30)]:
+        return S + "<h1>Please fill in your name, email and day</h1>" + back
+    today = _bb_local_now(shop).strftime("%Y-%m-%d")
+    w = [x for x in shop.get("wait", []) if x.get("date", "") >= today]
+    if any(x.get("email", "").lower() == em.lower() and x.get("date") == dt for x in w):
+        return S + "<h1>You're already on the waitlist</h1><p>We'll email you if a spot opens that day.</p>" + back
+    if len(w) >= 100:
+        return S + "<h1>The waitlist is full</h1><p>Please check back later or pick another day.</p>" + back
+    w.append({"name": nm, "email": em, "phone": (f.get("phone") or "").strip()[:30], "date": dt, "service": sv,
+              "ts": _bb_local_now(shop).strftime(_BB_F)})
+    shop["wait"] = w
+    save(d)
+    try:
+        notify("Waitlist signup at " + shop.get("name", ""), nm + " wants " + (sv or "an appointment") + " on " + dt + ".\nEmail: " + em +
+               ("\nPhone: " + w[-1]["phone"] if w[-1]["phone"] else "") + "\n\nThey'll get an email automatically if a spot opens that day.", shop.get("email") or None)
+    except Exception as ex:
+        print("wait notify:", ex)
+    lab = next((l for v, l in _bb_open_days(shop, 30) if v == dt), dt)
+    return S + "<h1>&#9989; You're on the waitlist!</h1><p>We'll email <b>" + str(escape(em)) + "</b> right away if a spot opens on <b>" + str(escape(lab)) + "</b> at " + str(escape(shop.get("name", ""))) + ".</p>" + back
+
+
+def _bb_wl_freed(old, new):
+    out = []
+    for sid, shop in (new or {}).items():
+        if not isinstance(shop, dict) or not shop.get("wait"):
+            continue
+        o = (old or {}).get(sid) or {}
+        nm = {b.get("rt"): b for b in shop.get("bookings", []) if b.get("rt")}
+        now = _bb_local_now(shop)
+        for b in o.get("bookings", []):
+            rt, w = b.get("rt"), b.get("when")
+            st = _bb_pdt(w)
+            if not rt or not st or st < now or _bb_is_cxl(b):
+                continue
+            nb = nm.get(rt)
+            if nb is None or nb.get("when") != w or _bb_is_cxl(nb):
+                out.append((sid, w))
+    return out
+
+
+def _bb_wl_notify(d, freed):
+    changed = False
+    try:
+        host = request.host_url
+    except Exception:
+        host = "https://www.business-bookie.com/"
+    for sid, w in freed:
+        shop = d.get(sid) or {}
+        day = str(w)[:10]
+        keep = []
+        for x in shop.get("wait", []):
+            if x.get("date") == day and x.get("email"):
+                changed = True
+                try:
+                    notify("A spot just opened at " + shop.get("name", ""),
+                           "Hi " + x.get("name", "") + ",\n\nGood news: a time just opened up at " + shop.get("name", "") + " on " + day +
+                           ". Spots go fast, so book it now:\n" + host + "b/" + sid +
+                           "\n\nYou were on the waitlist, so we let you know first. You've been taken off the waitlist for that day.", x["email"])
+                except Exception as ex:
+                    print("waitlist mail:", ex)
+            else:
+                keep.append(x)
+        shop["wait"] = keep
+    return changed
+
+
+_bb_save_wl = save
+
+
+def save(d):
+    freed = []
+    try:
+        if any(isinstance(v, dict) and v.get("wait") for v in d.values()):
+            freed = _bb_wl_freed(load(), d)
+    except Exception as ex:
+        print("waitlist check:", ex)
+    r = _bb_save_wl(d)
+    if freed:
+        try:
+            if _bb_wl_notify(d, freed):
+                _bb_save_wl(d)
+        except Exception as ex:
+            print("waitlist send:", ex)
+    return r
+
+
+def _bb_cal_times(shop, b):
+    st = _bb_local_to_utc(shop, datetime.strptime(b["when"], _BB_F))
+    en = st + timedelta(minutes=_bb_dur(shop, b.get("service")) or _bb_slot_min(shop))
+    f = "%Y%m%dT%H%M%SZ"
+    return st.strftime(f), en.strftime(f)
+
+
+def _bb_run_reminders(host):
+    d = load()
+    due = []
+    for sid, shop in d.items():
+        if not isinstance(shop, dict):
+            continue
+        now = _bb_local_now(shop)
+        for b in shop.get("bookings", []):
+            if b.get("done") or not b.get("email") or not b.get("when") or _bb_is_cxl(b):
+                continue
+            try:
+                hrs = (datetime.strptime(b["when"], _BB_F) - now).total_seconds() / 3600
+            except Exception:
+                continue
+            if 20 <= hrs <= 24 and not b.get("rem24"):
+                b["rem24"] = True
+                due.append(("24", sid, shop, dict(b)))
+            elif 0 < hrs <= 2.5 and not b.get("rem2"):
+                b["rem2"] = True
+                b["rem24"] = True
+                due.append(("2", sid, shop, dict(b)))
+    if not due:
+        return 0
+    save(d)
+    for kind, sid, shop, b in due:
+        try:
+            wh = _bb_fmt(b["when"])
+            when_word = "tomorrow" if kind == "24" else "in about 2 hours"
+            body = ("Hi " + b.get("name", "") + ",\n\nReminder: your " + b.get("service", "appointment") + " at " + shop.get("name", "") + " is " + when_word +
+                    " (" + wh + ")." + ("\nAddress: " + shop["addr"] if shop.get("addr") else "") +
+                    ("\nQuestions? Call " + shop["bphone"] if shop.get("bphone") else "") +
+                    "\n\nNeed to reschedule or cancel? " + host + "m/" + sid + "/" + b.get("rt", ""))
+            notify("Reminder: " + b.get("service", "your appointment") + " at " + shop.get("name", "") + " " + when_word, body, b["email"])
+        except Exception as ex:
+            print("reminder send:", ex)
+    return len(due)
+# ===== END BB UPGRADE =====
 
 
 import os
