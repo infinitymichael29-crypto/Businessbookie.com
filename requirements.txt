@@ -3,3 +3,4 @@ stripe
 gunicorn
 pg8000
 segno
+pywebpush<2
