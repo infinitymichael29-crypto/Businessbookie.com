@@ -4407,6 +4407,131 @@ def _bb_v5_after(resp):
 # ===== END BB UPGRADE 5 =====
 
 
+# ===== BB UPGRADE 6: Mapbox live traffic =====
+_BB_MBX = {"cache": {}, "day": "", "n": 0, "fail": 0}
+_bb_drive_min_est = _bb_drive_min
+
+
+def _bb_mapbox_min(p, q, when=None):
+    import os, json, time as _t, urllib.request, urllib.error
+    tok = os.environ.get("MAPBOX_TOKEN", "").strip()
+    if not tok or not p or not q:
+        return None
+    if _BB_MBX["fail"] >= 3 and _t.time() - _BB_MBX.get("fail_t", 0) < 600:
+        return None
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if _BB_MBX["day"] != today:
+        _BB_MBX.update({"day": today, "n": 0})
+    now_l = datetime.utcnow() - timedelta(hours=10)
+    future = bool(when) and when > now_l + timedelta(minutes=20)
+    slot = when.strftime("%Y-%m-%dT%H") if future else "now-" + str(int(_t.time() // 900))
+    key = (round(p[0], 4), round(p[1], 4), round(q[0], 4), round(q[1], 4), slot)
+    hit = _BB_MBX["cache"].get(key)
+    if hit and _t.time() - hit[1] < (21600 if future else 900):
+        return hit[0]
+    if _BB_MBX["n"] >= 2500:
+        return None
+    u = ("https://api.mapbox.com/directions/v5/mapbox/driving-traffic/%.6f,%.6f;%.6f,%.6f?overview=false&access_token=%s" % (p[1], p[0], q[1], q[0], tok))
+    if future:
+        u += "&depart_at=" + when.strftime("%Y-%m-%dT%H:%M")
+    try:
+        _BB_MBX["n"] += 1
+        r = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "business-bookie/1.0"}), timeout=6)
+        js = json.loads(r.read().decode())
+        sec = float(js["routes"][0]["duration"])
+        mins = int(-(-(sec / 60.0 + 3) // 5) * 5)
+        if len(_BB_MBX["cache"]) > 5000:
+            _BB_MBX["cache"].clear()
+        _BB_MBX["cache"][key] = (mins, _t.time())
+        _BB_MBX["fail"] = 0
+        return mins
+    except urllib.error.HTTPError as ex:
+        print("mapbox http:", ex.code)
+        return None
+    except Exception as ex:
+        _BB_MBX["fail"] += 1
+        _BB_MBX["fail_t"] = _t.time()
+        print("mapbox:", ex)
+        return None
+
+
+def _bb_drive_min(p, q, when=None):
+    d = _bb_miles(p, q)
+    if d is None:
+        return None
+    if d < 0.05:
+        return 0
+    if _BB_CTX.get("live") and not _BB_CTX.get("nolive"):
+        m = _bb_mapbox_min(p, q, when)
+        if m is not None:
+            return m
+    return _bb_drive_min_est(p, q, when)
+
+
+def _bb_live(fn):
+    def w(*a, **k):
+        old = _BB_CTX.get("live")
+        _BB_CTX["live"] = True
+        try:
+            return fn(*a, **k)
+        finally:
+            _BB_CTX["live"] = old
+    return w
+
+
+def _bb_nolive(fn):
+    def w(*a, **k):
+        old = _BB_CTX.get("nolive")
+        _BB_CTX["nolive"] = True
+        try:
+            return fn(*a, **k)
+        finally:
+            _BB_CTX["nolive"] = old
+    return w
+
+
+_bb_ok_slots = _bb_nolive(_bb_ok_slots)
+_bb_route_card = _bb_live(_bb_route_card)
+_bb_run_reminders = _bb_live(_bb_run_reminders)
+
+
+def _bb_v6_live_on():
+    try:
+        p = request.path.strip("/").split("/")
+        if request.method == "POST" and len(p) == 2 and p[0] == "book":
+            _BB_CTX["live"] = True
+    except Exception:
+        pass
+    return None
+
+
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_v6_live_on)
+
+
+@app.teardown_request
+def _bb_v6_live_off(exc=None):
+    _BB_CTX["live"] = False
+    _BB_CTX["nolive"] = False
+
+
+@app.route("/traffic/check")
+def bb_traffic_check():
+    import os
+    if not os.environ.get("MAPBOX_TOKEN"):
+        return app.response_class("mapbox: no token set\n", mimetype="text/plain")
+    a, b = (21.3972, -157.7394), (21.3351, -158.0861)
+    now_l = datetime.utcnow() - timedelta(hours=10)
+    t5 = (now_l + timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
+    while t5.weekday() >= 5:
+        t5 += timedelta(days=1)
+    live = _bb_mapbox_min(a, b, None)
+    pred = _bb_mapbox_min(a, b, t5)
+    est = _bb_drive_min_est(a, b, t5)
+    return app.response_class("Kailua -> Kapolei\nlive traffic now: %s min\npredicted %s: %s min\nold estimate at 5pm: %s min\nlookups today: %d\n" %
+                              (live, t5.strftime("%a %I:%M %p"), pred, est, _BB_MBX["n"]), mimetype="text/plain")
+# ===== END BB UPGRADE 6 =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
