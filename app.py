@@ -4532,6 +4532,26 @@ def bb_traffic_check():
 # ===== END BB UPGRADE 6 =====
 
 
+# ===== BB MANIFEST EXTRAS =====
+@app.after_request
+def _bb_manifest_extras(resp):
+    try:
+        if request.path.rstrip("/") in ("/manifest.json", "/manifest.webmanifest") and resp.status_code == 200:
+            import json as _j
+            m = _j.loads(resp.get_data(as_text=True))
+            m.setdefault("id", "/")
+            m.setdefault("orientation", "portrait")
+            m.setdefault("lang", "en-US")
+            m.setdefault("dir", "ltr")
+            m.setdefault("categories", ["business", "productivity", "lifestyle"])
+            m.setdefault("display_override", ["standalone", "minimal-ui"])
+            resp.set_data(_j.dumps(m))
+    except Exception as e:
+        print("manifest extras:", e)
+    return resp
+# ===== END BB MANIFEST EXTRAS =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
