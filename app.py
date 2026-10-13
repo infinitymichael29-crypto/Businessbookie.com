@@ -3672,6 +3672,559 @@ def notify(subject, body, to=None):
 # ===== END BB UPGRADE 3 =====
 
 
+# ===== BB UPGRADE 4: I come to you (mobile businesses) =====
+_BB_GEO = {}
+_BB_TRL = {}
+
+
+def _bb_where(shop):
+    w = (shop or {}).get("where") or "shop"
+    return w if w in ("shop", "mobile", "both") else "shop"
+
+
+def _bb_geocode(addr):
+    a = " ".join(str(addr or "").split()).strip()[:200]
+    if len(a) < 5:
+        return None
+    k = a.lower()
+    if k in _BB_GEO:
+        return _BB_GEO[k]
+    q = a
+    toks = k.replace(",", " ").split()
+    if "hi" not in toks[-3:] and "hawaii" not in k:
+        q = a + ", HI"
+    res = None
+    try:
+        import urllib.request, urllib.parse, json
+        u = ("https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?benchmark=Public_AR_Current&format=json&address=" + urllib.parse.quote(q))
+        r = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "business-bookie/1.0"}), timeout=8)
+        mt = json.loads(r.read().decode()).get("result", {}).get("addressMatches", [])
+        if mt:
+            c = mt[0]["coordinates"]
+            res = (float(c["y"]), float(c["x"]))
+    except Exception as ex:
+        print("geocode:", ex)
+        return None
+    if len(_BB_GEO) > 2000:
+        _BB_GEO.clear()
+    _BB_GEO[k] = res
+    return res
+
+
+def _bb_miles(p, q):
+    import math
+    if not p or not q:
+        return None
+    la1, lo1, la2, lo2 = map(math.radians, (p[0], p[1], q[0], q[1]))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 3958.8 * 2 * math.asin(math.sqrt(h))
+
+
+def _bb_drive_min(p, q, when=None):
+    d = _bb_miles(p, q)
+    if d is None:
+        return None
+    if d < 0.05:
+        return 0
+    rush = bool(when) and when.weekday() < 5 and (6 <= when.hour < 9 or 15 <= when.hour + when.minute / 60.0 < 18.5)
+    road = d * 1.3
+    mph = 25.0 + min(20.0, road)
+    if rush:
+        mph *= 0.65
+    mins = road / mph * 60 + 4
+    return int(-(-mins // 5) * 5)
+
+
+def _bb_shop_loc(shop):
+    try:
+        if shop.get("lat") and shop.get("lng"):
+            return (float(shop["lat"]), float(shop["lng"]))
+    except Exception:
+        pass
+    if shop.get("addr"):
+        return _bb_geocode(shop["addr"])
+    if shop.get("base_ll"):
+        return tuple(shop["base_ll"])
+    return None
+
+
+def _bb_base_loc(shop):
+    if shop.get("base_ll"):
+        return tuple(shop["base_ll"])
+    if shop.get("base"):
+        return _bb_geocode(shop["base"])
+    return _bb_shop_loc(shop)
+
+
+def _bb_b_loc(shop, b):
+    if b.get("at") == "home":
+        if b.get("lat") is not None and b.get("lng") is not None:
+            return (float(b["lat"]), float(b["lng"]))
+        return None
+    return _bb_shop_loc(shop)
+
+
+def _bb_travel_ok(shop, st_dt, ln, at, loc, staff_id="", skip_rt=None):
+    pad = max(0, min(120, int(shop.get("tpad") or 10)))
+    en = st_dt + timedelta(minutes=ln)
+    st = _bb_staff(shop) if "_bb_staff" in globals() else []
+    prev = nxt = None
+    for b in shop.get("bookings", []):
+        if _bb_is_cxl(b) or (skip_rt and b.get("rt") == skip_rt):
+            continue
+        if st and staff_id and _bb_b_staff(shop, b, st) != staff_id:
+            continue
+        bs = _bb_pdt(b.get("when"))
+        if not bs or bs.date() != st_dt.date():
+            continue
+        be = bs + timedelta(minutes=_bb_len(shop, b.get("service")))
+        if be <= st_dt and (prev is None or be > prev[1]):
+            prev = (b, be)
+        if bs >= en and (nxt is None or bs < nxt[1]):
+            nxt = (b, bs)
+    for side in (prev, nxt):
+        if not side:
+            continue
+        b, t = side
+        b_at = b.get("at") or "shop"
+        if b_at == "shop" and at == "shop":
+            continue
+        bl = _bb_b_loc(shop, b)
+        if bl and loc:
+            need = (_bb_drive_min(bl, loc, st_dt) or 0) + pad
+        else:
+            need = pad + 15
+        gap = (st_dt - t).total_seconds() / 60 if side is prev else (t - en).total_seconds() / 60
+        if gap < need:
+            return False
+    return True
+
+
+def _bb_ok_slots(shop, svc, staff, at, loc):
+    out = []
+    for v, lab in _bb_slots_for(shop, svc, staff):
+        try:
+            if _bb_blocked(shop, v):
+                continue
+        except Exception:
+            pass
+        dt = _bb_pdt(v)
+        who = staff
+        if _bb_staff(shop) and not staff:
+            who = next((s["id"] for s in _bb_staff(shop) if _bb_as_staff(s["id"], lambda: _bb_range_ok(shop, dt, _bb_len(shop, svc), None, bool(_bb_dur(shop, svc))))
+                        and _bb_travel_ok(shop, dt, _bb_len(shop, svc), at, loc, s["id"])), None)
+            if who:
+                out.append((v, lab))
+            continue
+        if _bb_travel_ok(shop, dt, _bb_len(shop, svc), at, loc, who or ""):
+            out.append((v, lab))
+    return out
+
+
+def _bb_hidden(skip=("when",)):
+    return "".join("<input type='hidden' name='" + str(escape(k)) + "' value='" + str(escape(v)) + "'>"
+                   for k, vs in request.form.lists() for v in vs if k not in skip)
+
+
+@app.before_request
+def _bb_v4_before():
+    try:
+        from flask import g
+        p = request.path.strip("/").split("/")
+        if len(p) == 3 and p[0] == "m" and request.method == "GET":
+            shop = load().get(p[1]) or {}
+            b = next((x for x in shop.get("bookings", []) if x.get("rt") == p[2]), None)
+            if b and b.get("at") == "home":
+                g.bb_nodir = True
+            return None
+        if not (request.method == "POST" and len(p) == 2 and p[0] == "book"):
+            return None
+        d = load()
+        shop = d.get(p[1])
+        if not shop or _bb_where(shop) == "shop":
+            return None
+        f = request.form
+        wh = _bb_where(shop)
+        at = "home" if wh == "mobile" else ("home" if f.get("at") == "home" else "shop")
+        svc = f.get("service")
+        st_dt = _bb_pdt(f.get("when", ""))
+        back = "<a href='/b/" + p[1] + "'>Back</a>"
+        x = {"at": at}
+        loc = None
+        if at == "home":
+            g.bb_nodir = True
+            ca = " ".join((f.get("caddr") or "").split())[:200]
+            if len(ca) < 5:
+                return S + "<h1>Please enter your address</h1><p>Tell us where to come for your appointment.</p>" + back
+            loc = _bb_geocode(ca)
+            x.update({"caddr": ca, "geo_ok": bool(loc)})
+            if loc:
+                x["lat"], x["lng"] = round(loc[0], 6), round(loc[1], 6)
+                base = _bb_base_loc(shop)
+                rad = float(shop.get("radius") or 0)
+                if base and rad > 0 and _bb_miles(base, loc) > rad:
+                    return (S + "<h1>Sorry, that's outside our service area</h1><p>" + str(escape(shop.get("name", ""))) + " serves " +
+                            str(escape(shop.get("area") or ("within " + str(int(rad)) + " miles"))) + ".</p>" + back)
+        else:
+            loc = _bb_shop_loc(shop)
+        if st_dt:
+            who = g.get("bb_staff") or ""
+            if not _bb_travel_ok(shop, st_dt, _bb_len(shop, svc), at, loc, who):
+                alts = _bb_ok_slots(shop, svc, who, at, loc)[:60]
+                opts = "".join("<option value='" + str(escape(v)) + "'>" + str(escape(lab)) + "</option>" for v, lab in alts)
+                return (S + "<h1>Not enough drive time</h1><p>That time is too close to another appointment across town. "
+                        "You have <b>not</b> been charged.</p>" + ("<p>These times work for your address:</p><form method='post' action='/book/" + p[1] + "'>" +
+                        _bb_hidden() + "<select name='when' required>" + opts + "</select><button>Book this time</button></form>" if alts else "<p>No other open times fit right now.</p>") + back)
+        key = _bb_pkey(f.get("when"), f.get("email"))
+        pend = shop.get("pend") or {}
+        pe = pend.get(key) or {"staff": "", "note": ""}
+        pe["x"] = x
+        pend[key] = pe
+        shop["pend"] = pend
+        save(d)
+    except Exception as e:
+        print("v4 before:", e)
+    return None
+
+
+_bb_save_v4 = save
+
+
+def save(d):
+    try:
+        for v in d.values():
+            if not isinstance(v, dict) or not v.get("pend"):
+                continue
+            for b in v.get("bookings", []):
+                pe = v["pend"].get(_bb_pkey(b.get("when"), b.get("email")))
+                if pe and pe.get("x") and not b.get("at"):
+                    b.update(pe.pop("x"))
+            for k in [k for k, pe in v["pend"].items() if not pe.get("staff") and not pe.get("note") and not pe.get("x")]:
+                v["pend"].pop(k, None)
+    except Exception as e:
+        print("v4 save:", e)
+    return _bb_save_v4(d)
+
+
+def _bb_cust_dir(b):
+    from urllib.parse import quote as _q
+    if b.get("lat") is not None and b.get("lng") is not None:
+        return "https://www.google.com/maps/dir/?api=1&destination=" + _q(str(b["lat"]) + "," + str(b["lng"]))
+    if b.get("caddr"):
+        return "https://www.google.com/maps/dir/?api=1&destination=" + _q(b["caddr"])
+    return ""
+
+
+_bb_dir_url_v1 = _bb_dir_url
+
+
+def _bb_dir_url(shop):
+    if _bb_where(shop) == "mobile" or _BB_CTX.get("nodir") or _bb_gv("bb_nodir"):
+        return ""
+    return _bb_dir_url_v1(shop)
+
+
+_bb_notify_v4 = notify
+
+
+def notify(subject, body, to=None):
+    try:
+        import re as _re
+        m_ = _re.search(r"/m/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", body or "")
+        if m_:
+            shop = load().get(m_.group(1)) or {}
+            b = next((x for x in shop.get("bookings", []) if x.get("rt") == m_.group(2)), None)
+            if b and b.get("at") == "home":
+                if "Your address:" not in body and b.get("caddr"):
+                    body += "\n\nWe'll come to: " + b["caddr"]
+                _BB_CTX["nodir"] = True
+        p = request.path.strip("/").split("/")
+        if len(p) >= 2 and p[0] in ("book", "paid") and "booking" in (subject or "").lower():
+            shop = load().get(p[1]) or {}
+            b = (shop.get("bookings") or [None])[-1]
+            if b and b.get("at") == "home" and b.get("caddr") and (to or "").lower() != (b.get("email") or "").lower() and "Customer address:" not in body:
+                body += "\n\nHOUSE CALL\nCustomer address: " + b["caddr"] + ("\nDirections to customer: " + _bb_cust_dir(b) if _bb_cust_dir(b) else "") + \
+                        ("" if b.get("geo_ok") else "\n(We couldn't find this address on the map - double-check it with the customer.)")
+    except Exception:
+        pass
+    try:
+        return _bb_notify_v4(subject, body, to)
+    finally:
+        _BB_CTX["nodir"] = False
+
+
+def _bb_where_form(shop):
+    e = lambda s: str(escape(s))
+    wh = _bb_where(shop)
+    op = "".join("<option value='" + k + "'" + (" selected" if wh == k else "") + ">" + lab + "</option>" for k, lab in
+                 (("shop", "Customers come to me (my address)"), ("mobile", "I go to the customer (house calls)"), ("both", "Both - customer picks")))
+    warn = ("<p style='color:#b37400;font-size:13px'>&#9888; We couldn't find your home base on the map. Check the address.</p>"
+            if shop.get("base") and not shop.get("base_ll") else "")
+    return ("<h3>Where do appointments happen?</h3><select name='where'>" + op + "</select>"
+            "<p style='font-size:13px;color:#556'>If customers come to you, your business address is required. For house calls you can leave it blank "
+            "so your home stays private.</p>"
+            "<p>Area you serve (shown to customers)</p><input name='area' maxlength='120' placeholder='Honolulu, Kailua, Kaneohe' value='" + e(shop.get("area", "")) + "'>"
+            "<p>Home base address (private, used for drive times)</p><input name='base' maxlength='200' placeholder='Where you start your day' value='" + e(shop.get("base", "")) + "'>" + warn +
+            "<p>Farthest you'll drive (miles, 0 = no limit)</p><input type='number' name='radius' min='0' max='200' value='" + e(str(int(float(shop.get("radius") or 0)))) + "'>"
+            "<p>Extra minutes between house calls (parking, setup)</p><input type='number' name='tpad' min='0' max='120' value='" + e(str(int(shop.get("tpad") or 10))) + "'>")
+
+
+_bb_bphone_in_old7 = _bb_bphone_in
+
+
+def _bb_bphone_in(shop):
+    h = _bb_bphone_in_old7(shop)
+    if isinstance(shop, dict) and "services" in shop and "<h3>Staff</h3>" in h and "name='where'" not in h:
+        i = h.find("<h3>Staff</h3>")
+        h = h[:i] + _bb_where_form(shop) + h[i:]
+    return h
+
+
+def _bb_v4_edit_check():
+    try:
+        p = request.path.strip("/").split("/")
+        if request.method == "POST" and len(p) == 2 and p[0] == "edit" and request.form.get("bb_hours") == "1" and "where" in request.form:
+            if not _bb_sess.get("own_" + p[1]):
+                return None
+            f = request.form
+            wh = f.get("where") if f.get("where") in ("shop", "mobile", "both") else "shop"
+            if wh != "mobile" and not (f.get("addr") or "").strip():
+                return (S + "<h1>Business address needed</h1><p>Customers come to you, so they need your address to find you. "
+                        "Add it, or choose \"I go to the customer\" if you only do house calls.</p><a href='javascript:history.back()'>Go back</a>")
+            d = load()
+            shop = d.get(p[1])
+            if not shop:
+                return None
+            shop["where"] = wh
+            shop["area"] = (f.get("area") or "").strip()[:120]
+            base = " ".join((f.get("base") or "").split())[:200]
+            if base != shop.get("base") or not shop.get("base_ll"):
+                ll = _bb_geocode(base) if base else None
+                if ll:
+                    shop["base_ll"] = [round(ll[0], 6), round(ll[1], 6)]
+                else:
+                    shop.pop("base_ll", None)
+            shop["base"] = base
+            for k, mx in (("radius", 200), ("tpad", 120)):
+                v = (f.get(k) or "0").strip()
+                shop[k] = max(0, min(mx, int(v))) if v.isdigit() else (10 if k == "tpad" else 0)
+            save(d)
+    except Exception as e:
+        print("v4 edit:", e)
+    return None
+
+
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_v4_edit_check)
+
+
+def _bb_v4_create_check():
+    try:
+        if request.method == "POST" and request.path.rstrip("/") == "/create" and "where" in request.form:
+            if request.form.get("where") != "mobile" and not (request.form.get("addr") or "").strip():
+                return (S + "<h1>Business address needed</h1><p>Customers will come to you, so add your business address. "
+                        "If you only do house calls, choose \"I go to the customer\".</p><a href='javascript:history.back()'>Go back</a>")
+    except Exception as e:
+        print("v4 create:", e)
+    return None
+
+
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_v4_create_check)
+
+
+@app.after_request
+def _bb_v4_after(resp):
+    try:
+        p = request.path.strip("/").split("/")
+        if request.method == "POST" and request.path.rstrip("/") == "/create" and resp.status_code in (301, 302, 303) and request.form.get("where"):
+            loc = resp.headers.get("Location", "")
+            sid = loc.rstrip("/").split("/")[-1].split("?")[0]
+            d = load()
+            if sid in d and request.form.get("where") in ("shop", "mobile", "both"):
+                d[sid]["where"] = request.form.get("where")
+                save(d)
+            return resp
+        if resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        if request.method == "POST" and request.path.rstrip("/") == "/setup":
+            h = resp.get_data(as_text=True)
+            i = h.find("<input name='addr'")
+            if i >= 0 and "name='where'" not in h:
+                sel = ("<p><b>Where do appointments happen?</b></p><select name='where' id='bbwhere' onchange=\"var a=document.querySelector('input[name=addr]');"
+                       "if(a){a.required=this.value!=='mobile';a.placeholder=this.value==='mobile'?'Business address (optional for house calls)':'Business address (required)'}\">"
+                       "<option value='shop'>Customers come to me</option><option value='mobile'>I go to the customer (house calls)</option><option value='both'>Both</option></select>")
+                h = h[:i] + sel + h[i:].replace("<input name='addr' placeholder='Business address'", "<input name='addr' required placeholder='Business address (required)'", 1)
+                resp.set_data(h)
+            return resp
+        if request.method != "GET":
+            return resp
+        if len(p) == 2 and p[0] == "b":
+            shop = load().get(p[1])
+            if not shop or _bb_where(shop) == "shop":
+                return resp
+            h = resp.get_data(as_text=True)
+            if "name='caddr'" in h:
+                return resp
+            wh = _bb_where(shop)
+            inp = "<input name='caddr' id='bbcaddr' autocomplete='street-address' placeholder='Your address (street, city)'" + (" required" if wh == "mobile" else "") + ">"
+            if wh == "mobile":
+                blk = "<p><b>&#128663; Where should we come?</b></p>" + inp
+            else:
+                blk = ("<p><b>Where would you like your appointment?</b></p><label style='display:flex;gap:8px;align-items:center'><input type='radio' name='at' value='shop' checked style='width:auto'> At the shop</label>"
+                       "<label style='display:flex;gap:8px;align-items:center'><input type='radio' name='at' value='home' style='width:auto'> Come to me</label><div id='bbcaddrbox' style='display:none'>" + inp + "</div>")
+            blk += "<div id='bbtravelmsg' style='font-size:13px;color:#556;margin:4px 0'></div>"
+            i = h.find("<select name='service'")
+            if i < 0:
+                return resp
+            h = h[:i] + blk + h[i:]
+            js = ("<script>(function(){var a=document.getElementById('bbcaddr'),w=document.querySelector('select[name=when]'),s=document.querySelector('select[name=service]'),m=document.getElementById('bbtravelmsg');"
+                  "if(!a||!w||!s)return;var box=document.getElementById('bbcaddrbox');function home(){var r=document.querySelector('input[name=at]:checked');return !r||r.value==='home'}"
+                  "[].forEach.call(document.querySelectorAll('input[name=at]'),function(r){r.addEventListener('change',function(){if(box)box.style.display=home()?'block':'none';a.required=home();if(home())go();})});"
+                  "var t=null;function go(){if(!home()||a.value.trim().length<6)return;var p=document.querySelector('select[name=staff]');m.textContent='Checking drive time to your address...';"
+                  "fetch('/travel/" + p[1] + "?a='+encodeURIComponent(a.value)+'&svc='+encodeURIComponent(s.value)+'&staff='+encodeURIComponent(p?p.value:'')).then(function(r){return r.json()}).then(function(j){"
+                  "if(j.out){m.textContent=j.msg;w.innerHTML='';return}var cur=w.value;w.innerHTML='';j.ok.forEach(function(x){var o=document.createElement('option');o.value=x[0];o.text=x[1];w.appendChild(o)});"
+                  "if(!j.ok.length){var o=document.createElement('option');o.value='';o.text='No open times fit your address. Try the waitlist below.';w.appendChild(o)}"
+                  "if(cur)w.value=cur;if(!w.value&&w.options.length)w.selectedIndex=0;m.textContent=j.msg||''}).catch(function(){m.textContent=''})}"
+                  "a.addEventListener('change',go);a.addEventListener('input',function(){clearTimeout(t);t=setTimeout(go,900)});"
+                  "s.addEventListener('change',function(){setTimeout(go,50)});var p0=document.querySelector('select[name=staff]');if(p0)p0.addEventListener('change',function(){setTimeout(go,50)})})();</script>")
+            resp.set_data(h + js)
+        elif len(p) == 3 and p[0] == "m":
+            shop = load().get(p[1]) or {}
+            b = next((x for x in shop.get("bookings", []) if x.get("rt") == p[2]), None)
+            h = resp.get_data(as_text=True)
+            if b and b.get("at") == "home" and b.get("caddr") and "id='bbhome'" not in h:
+                i = h.find("</h1>")
+                i = i + 5 if i >= 0 else 0
+                resp.set_data(h[:i] + "<p id='bbhome'>&#128663; <b>House call.</b> We'll come to: " + str(escape(b["caddr"])) + "</p>" + h[i:])
+        elif len(p) == 2 and p[0] == "d":
+            shop = load().get(p[1]) or {}
+            h = resp.get_data(as_text=True)
+            if _bb_where(shop) != "shop" and "total bookings" in h and "id='bbroute'" not in h:
+                card = _bb_route_card(shop)
+                i = h.find("total bookings</div>")
+                i = i + len("total bookings</div>") if i >= 0 else -1
+                h = h[:i] + card + h[i:] if i >= 0 else h + card
+                resp.set_data(h)
+    except Exception as ex:
+        print("v4 after:", ex)
+    return resp
+
+
+def _bb_route_card(shop):
+    from urllib.parse import quote as _q
+    e = lambda s: str(escape(s))
+    now = _bb_local_now(shop)
+    days = {}
+    for b in shop.get("bookings", []):
+        dt = _bb_pdt(b.get("when"))
+        if not dt or _bb_is_cxl(b) or dt < now - timedelta(hours=2) or dt > now + timedelta(days=3):
+            continue
+        days.setdefault(dt.date(), []).append((dt, b))
+    out = "<div class='card' id='bbroute'><b>&#128663; House calls (next 3 days)</b>"
+    if not days:
+        return out + "<p style='font-size:13px;color:#889'>No house calls coming up.</p></div>"
+    for day in sorted(days):
+        jobs = sorted(days[day], key=lambda x: x[0])
+        out += "<p style='margin:10px 0 4px'><b>" + day.strftime("%a %b %d") + "</b></p>"
+        prev = _bb_base_loc(shop)
+        stops = []
+        for dt, b in jobs:
+            loc = _bb_b_loc(shop, b)
+            dm = _bb_drive_min(prev, loc, dt) if prev and loc else None
+            where_txt = b.get("caddr") if b.get("at") == "home" else "At the shop"
+            link = _bb_cust_dir(b) if b.get("at") == "home" else ""
+            out += ("<div style='font-size:14px;padding:5px 0;border-bottom:1px solid #eef'>" + ("<span style='color:#889'>&#8595; about " + str(dm) + " min drive</span><br>" if dm else "") +
+                    "<b>" + dt.strftime("%I:%M %p").lstrip("0") + "</b> &middot; " + e(b.get("name", "")) + " &middot; " + e(b.get("service", "")) + "<br>" + e(where_txt or "") +
+                    (" <a href='" + e(link) + "' target='_blank' rel='noopener'>Directions</a>" if link else "") + "</div>")
+            if loc:
+                prev = loc
+            if b.get("at") == "home" and (b.get("caddr") or b.get("lat")):
+                stops.append(str(b["lat"]) + "," + str(b["lng"]) if b.get("lat") is not None else b["caddr"])
+        if stops:
+            u = "https://www.google.com/maps/dir/?api=1&destination=" + _q(stops[-1]) + ("&waypoints=" + _q("|".join(stops[:-1][:9])) if len(stops) > 1 else "")
+            out += "<a href='" + e(u) + "' target='_blank' rel='noopener' style='display:inline-block;margin-top:6px;font-weight:700'>&#128506; Open this day's route in Google Maps</a>"
+    return out + "<p style='font-size:12px;color:#889;margin-top:8px'>Drive times are estimates.</p></div>"
+
+
+@app.route("/travel/<sid>")
+def bb_travel(sid):
+    import json, time as _t
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    now = _t.time()
+    hits = [x for x in _BB_TRL.get(ip, []) if now - x < 60]
+    if len(hits) >= 30:
+        return app.response_class(json.dumps({"ok": [], "out": True, "msg": "Too many checks, wait a minute."}), mimetype="application/json")
+    _BB_TRL[ip] = hits + [now]
+    shop = load().get(sid) or {}
+    if not shop or _bb_where(shop) == "shop":
+        return app.response_class(json.dumps({"ok": [], "out": False, "msg": ""}), mimetype="application/json")
+    loc = _bb_geocode(request.args.get("a", ""))
+    msg = ""
+    if not loc:
+        msg = "We couldn't find that address on the map, so times aren't adjusted for driving. Double-check it."
+    else:
+        base = _bb_base_loc(shop)
+        rad = float(shop.get("radius") or 0)
+        if base and rad > 0 and _bb_miles(base, loc) > rad:
+            return app.response_class(json.dumps({"ok": [], "out": True, "msg": "Sorry, that address is outside our service area" +
+                                                  (" (" + shop["area"] + ")" if shop.get("area") else "") + "."}), mimetype="application/json")
+        msg = "Times below leave room to drive to you."
+    ok = _bb_ok_slots(shop, request.args.get("svc") or None, request.args.get("staff", ""), "home", loc)
+    return app.response_class(json.dumps({"ok": ok, "out": False, "msg": msg}), mimetype="application/json")
+
+
+_bb_page_extras_v4 = _bb_page_extras
+
+
+def _bb_page_extras(sid, shop):
+    out = _bb_page_extras_v4(sid, shop)
+    if _bb_where(shop) != "shop":
+        out = ("<p style='font-weight:700;color:#1faa59'>&#128663; " + ("We come to you" if _bb_where(shop) == "mobile" else "Visit us, or we come to you") +
+               (" &middot; Serving " + str(escape(shop["area"])) if shop.get("area") else "") + "</p>") + out
+    return out
+
+
+_bb_run_reminders_v4 = _bb_run_reminders
+
+
+def _bb_run_reminders(host):
+    n = _bb_run_reminders_v4(host)
+    try:
+        d = load()
+        due = []
+        for sid, shop in d.items():
+            if not isinstance(shop, dict) or _bb_where(shop) == "shop":
+                continue
+            now = _bb_local_now(shop)
+            for b in shop.get("bookings", []):
+                dt = _bb_pdt(b.get("when"))
+                if not dt or b.get("at") != "home" or b.get("lv_sent") or _bb_is_cxl(b):
+                    continue
+                if timedelta(0) < dt - now <= timedelta(minutes=90):
+                    prevs = [(_bb_pdt(x["when"]), x) for x in shop.get("bookings", []) if x is not b and not _bb_is_cxl(x) and _bb_pdt(x.get("when"))
+                             and _bb_pdt(x["when"]).date() == dt.date() and _bb_pdt(x["when"]) < dt]
+                    src = _bb_b_loc(shop, max(prevs, key=lambda z: z[0])[1]) if prevs else _bb_base_loc(shop)
+                    dm = _bb_drive_min(src, _bb_b_loc(shop, b), now)
+                    b["lv_sent"] = True
+                    due.append((shop, dict(b), dt, dm))
+        if due:
+            save(d)
+            for shop, b, dt, dm in due:
+                leave = (dt - timedelta(minutes=(dm or 15) + 5)).strftime("%I:%M %p").lstrip("0")
+                try:
+                    notify("Next house call: " + b.get("name", "") + " at " + dt.strftime("%I:%M %p").lstrip("0"),
+                           b.get("service", "") + " for " + b.get("name", "") + " at " + dt.strftime("%I:%M %p").lstrip("0") + "\nAddress: " + b.get("caddr", "") +
+                           ("\nAbout " + str(dm) + " min drive. Leave by " + leave + "." if dm is not None else "\nLeave by " + leave + " (drive time unknown).") +
+                           ("\nDirections: " + _bb_cust_dir(b) if _bb_cust_dir(b) else "") + ("\nCall: " + b["phone"] if b.get("phone") else ""),
+                           shop.get("email") or None)
+                except Exception as ex:
+                    print("leave-by mail:", ex)
+        n += len(due)
+    except Exception as ex:
+        print("leave-by:", ex)
+    return n
+# ===== END BB UPGRADE 4 =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
