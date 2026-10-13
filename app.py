@@ -3679,7 +3679,7 @@ _BB_TRL = {}
 
 def _bb_where(shop):
     w = (shop or {}).get("where") or "shop"
-    return w if w in ("shop", "mobile", "both") else "shop"
+    return w if w in ("shop", "mobile", "both", "online") else "shop"
 
 
 def _bb_geocode(addr):
@@ -3841,7 +3841,7 @@ def _bb_v4_before():
             return None
         d = load()
         shop = d.get(p[1])
-        if not shop or _bb_where(shop) == "shop":
+        if not shop or _bb_where(shop) in ("shop", "online"):
             return None
         f = request.form
         wh = _bb_where(shop)
@@ -3919,7 +3919,7 @@ _bb_dir_url_v1 = _bb_dir_url
 
 
 def _bb_dir_url(shop):
-    if _bb_where(shop) == "mobile" or _BB_CTX.get("nodir") or _bb_gv("bb_nodir"):
+    if _bb_where(shop) in ("mobile", "online") or _BB_CTX.get("nodir") or _bb_gv("bb_nodir"):
         return ""
     return _bb_dir_url_v1(shop)
 
@@ -3957,7 +3957,7 @@ def _bb_where_form(shop):
     e = lambda s: str(escape(s))
     wh = _bb_where(shop)
     op = "".join("<option value='" + k + "'" + (" selected" if wh == k else "") + ">" + lab + "</option>" for k, lab in
-                 (("shop", "Customers come to me (my address)"), ("mobile", "I go to the customer (house calls)"), ("both", "Both - customer picks")))
+                 (("shop", "Customers come to me (my address)"), ("mobile", "I go to the customer (house calls)"), ("both", "Both - customer picks"), ("online", "Online / video call (no address needed)")))
     warn = ("<p style='color:#b37400;font-size:13px'>&#9888; We couldn't find your home base on the map. Check the address.</p>"
             if shop.get("base") and not shop.get("base_ll") else "")
     return ("<h3>Where do appointments happen?</h3><select name='where'>" + op + "</select>"
@@ -3987,8 +3987,8 @@ def _bb_v4_edit_check():
             if not _bb_sess.get("own_" + p[1]):
                 return None
             f = request.form
-            wh = f.get("where") if f.get("where") in ("shop", "mobile", "both") else "shop"
-            if wh != "mobile" and not (f.get("addr") or "").strip():
+            wh = f.get("where") if f.get("where") in ("shop", "mobile", "both", "online") else "shop"
+            if wh not in ("mobile", "online") and not (f.get("addr") or "").strip():
                 return (S + "<h1>Business address needed</h1><p>Customers come to you, so they need your address to find you. "
                         "Add it, or choose \"I go to the customer\" if you only do house calls.</p><a href='javascript:history.back()'>Go back</a>")
             d = load()
@@ -4020,7 +4020,7 @@ app.before_request_funcs.setdefault(None, []).insert(0, _bb_v4_edit_check)
 def _bb_v4_create_check():
     try:
         if request.method == "POST" and request.path.rstrip("/") == "/create" and "where" in request.form:
-            if request.form.get("where") != "mobile" and not (request.form.get("addr") or "").strip():
+            if request.form.get("where") not in ("mobile", "online") and not (request.form.get("addr") or "").strip():
                 return (S + "<h1>Business address needed</h1><p>Customers will come to you, so add your business address. "
                         "If you only do house calls, choose \"I go to the customer\".</p><a href='javascript:history.back()'>Go back</a>")
     except Exception as e:
@@ -4039,7 +4039,7 @@ def _bb_v4_after(resp):
             loc = resp.headers.get("Location", "")
             sid = loc.rstrip("/").split("/")[-1].split("?")[0]
             d = load()
-            if sid in d and request.form.get("where") in ("shop", "mobile", "both"):
+            if sid in d and request.form.get("where") in ("shop", "mobile", "both", "online"):
                 d[sid]["where"] = request.form.get("where")
                 save(d)
             return resp
@@ -4050,8 +4050,8 @@ def _bb_v4_after(resp):
             i = h.find("<input name='addr'")
             if i >= 0 and "name='where'" not in h:
                 sel = ("<p><b>Where do appointments happen?</b></p><select name='where' id='bbwhere' onchange=\"var a=document.querySelector('input[name=addr]');"
-                       "if(a){a.required=this.value!=='mobile';a.placeholder=this.value==='mobile'?'Business address (optional for house calls)':'Business address (required)'}\">"
-                       "<option value='shop'>Customers come to me</option><option value='mobile'>I go to the customer (house calls)</option><option value='both'>Both</option></select>")
+                       "if(a){a.required=this.value!=='mobile'&&this.value!=='online';a.placeholder=(this.value==='mobile'||this.value==='online')?'Business address (optional for house calls)':'Business address (required)'}\">"
+                       "<option value='shop'>Customers come to me</option><option value='mobile'>I go to the customer (house calls)</option><option value='both'>Both</option><option value='online'>Online / video call</option></select>")
                 h = h[:i] + sel + h[i:].replace("<input name='addr' placeholder='Business address'", "<input name='addr' required placeholder='Business address (required)'", 1)
                 resp.set_data(h)
             return resp
@@ -4059,7 +4059,7 @@ def _bb_v4_after(resp):
             return resp
         if len(p) == 2 and p[0] == "b":
             shop = load().get(p[1])
-            if not shop or _bb_where(shop) == "shop":
+            if not shop or _bb_where(shop) in ("shop", "online"):
                 return resp
             h = resp.get_data(as_text=True)
             if "name='caddr'" in h:
@@ -4098,7 +4098,7 @@ def _bb_v4_after(resp):
         elif len(p) == 2 and p[0] == "d":
             shop = load().get(p[1]) or {}
             h = resp.get_data(as_text=True)
-            if _bb_where(shop) != "shop" and "total bookings" in h and "id='bbroute'" not in h:
+            if _bb_where(shop) not in ("shop", "online") and "total bookings" in h and "id='bbroute'" not in h:
                 card = _bb_route_card(shop)
                 i = h.find("total bookings</div>")
                 i = i + len("total bookings</div>") if i >= 0 else -1
@@ -4155,7 +4155,7 @@ def bb_travel(sid):
         return app.response_class(json.dumps({"ok": [], "out": True, "msg": "Too many checks, wait a minute."}), mimetype="application/json")
     _BB_TRL[ip] = hits + [now]
     shop = load().get(sid) or {}
-    if not shop or _bb_where(shop) == "shop":
+    if not shop or _bb_where(shop) in ("shop", "online"):
         return app.response_class(json.dumps({"ok": [], "out": False, "msg": ""}), mimetype="application/json")
     loc = _bb_geocode(request.args.get("a", ""))
     msg = ""
@@ -4177,7 +4177,7 @@ _bb_page_extras_v4 = _bb_page_extras
 
 def _bb_page_extras(sid, shop):
     out = _bb_page_extras_v4(sid, shop)
-    if _bb_where(shop) != "shop":
+    if _bb_where(shop) not in ("shop", "online"):
         out = ("<p style='font-weight:700;color:#1faa59'>&#128663; " + ("We come to you" if _bb_where(shop) == "mobile" else "Visit us, or we come to you") +
                (" &middot; Serving " + str(escape(shop["area"])) if shop.get("area") else "") + "</p>") + out
     return out
@@ -4192,7 +4192,7 @@ def _bb_run_reminders(host):
         d = load()
         due = []
         for sid, shop in d.items():
-            if not isinstance(shop, dict) or _bb_where(shop) == "shop":
+            if not isinstance(shop, dict) or _bb_where(shop) in ("shop", "online"):
                 continue
             now = _bb_local_now(shop)
             for b in shop.get("bookings", []):
@@ -4223,6 +4223,188 @@ def _bb_run_reminders(host):
         print("leave-by:", ex)
     return n
 # ===== END BB UPGRADE 4 =====
+
+
+# ===== BB UPGRADE 5: address check + online/video mode =====
+def _bb_needs_addr(shop):
+    return isinstance(shop, dict) and _bb_where(shop) in ("shop", "both") and not (shop.get("addr") or "").strip()
+
+
+def _bb_meet(shop):
+    u = (shop or {}).get("meet") or ""
+    return u if u.startswith("https://") else ""
+
+
+def _bb_v5_edit():
+    try:
+        p = request.path.strip("/").split("/")
+        if request.method == "POST" and len(p) == 2 and p[0] == "edit" and request.form.get("bb_hours") == "1" and "where" in request.form:
+            if not _bb_sess.get("own_" + p[1]):
+                return None
+            u = " ".join((request.form.get("meet") or "").split())[:300]
+            if request.form.get("where") == "online" and not u.startswith("https://"):
+                return (S + "<h1>Video call link needed</h1><p>For online appointments, paste your Zoom, Google Meet or other video link "
+                        "(it starts with https://). Customers get it in their confirmation and reminders.</p><a href='javascript:history.back()'>Go back</a>")
+            if u and not u.startswith("https://"):
+                return S + "<h1>That link doesn't look right</h1><p>Video links start with https://</p><a href='javascript:history.back()'>Go back</a>"
+            d = load()
+            shop = d.get(p[1])
+            if shop is not None and shop.get("meet", "") != u:
+                shop["meet"] = u
+                save(d)
+    except Exception as e:
+        print("v5 edit:", e)
+    return None
+
+
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_v5_edit)
+
+
+def _bb_v5_create():
+    try:
+        if request.method == "POST" and request.path.rstrip("/") == "/create" and request.form.get("where") == "online":
+            u = (request.form.get("meet") or "").strip()
+            if u and not u.startswith("https://"):
+                return S + "<h1>That video link doesn't look right</h1><p>Video links start with https://</p><a href='javascript:history.back()'>Go back</a>"
+    except Exception as e:
+        print("v5 create:", e)
+    return None
+
+
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_v5_create)
+
+_bb_where_form_v5 = _bb_where_form
+
+
+def _bb_where_form(shop):
+    return (_bb_where_form_v5(shop) +
+            "<p>Video call link (for online appointments)</p><input name='meet' maxlength='300' placeholder='https://zoom.us/j/... or https://meet.google.com/...' value='" +
+            str(escape(shop.get("meet", ""))) + "'>")
+
+
+_bb_listed_v5 = _bb_listed
+
+
+def _bb_listed(v):
+    if _bb_needs_addr(v):
+        return False
+    if isinstance(v, dict) and _bb_where(v) == "online" and not _bb_meet(v):
+        return False
+    return _bb_listed_v5(v)
+
+
+_bb_page_extras_v5 = _bb_page_extras
+
+
+def _bb_page_extras(sid, shop):
+    out = _bb_page_extras_v5(sid, shop)
+    if _bb_where(shop) == "online":
+        out = "<p style='font-weight:700;color:#1a6dff'>&#128187; Online appointment &middot; you'll get a video call link after booking</p>" + out
+    return out
+
+
+_bb_notify_v5 = notify
+
+
+def notify(subject, body, to=None):
+    try:
+        import re as _re
+        m_ = _re.search(r"/m/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", body or "")
+        if m_:
+            shop = load().get(m_.group(1)) or {}
+            if _bb_where(shop) == "online" and _bb_meet(shop) and _bb_meet(shop) not in body and (to or "").lower() != (shop.get("email") or "").lower():
+                body += "\n\nThis is an online appointment. Join your video call here:\n" + _bb_meet(shop)
+    except Exception:
+        pass
+    return _bb_notify_v5(subject, body, to)
+
+
+@app.after_request
+def _bb_v5_after(resp):
+    try:
+        p = request.path.strip("/").split("/")
+        if request.method == "POST" and request.path.rstrip("/") == "/create" and resp.status_code in (301, 302, 303) and request.form.get("where") == "online":
+            sid = resp.headers.get("Location", "").rstrip("/").split("/")[-1].split("?")[0]
+            d = load()
+            if sid in d:
+                d[sid]["where"] = "online"
+                u = (request.form.get("meet") or "").strip()
+                if u.startswith("https://"):
+                    d[sid]["meet"] = u[:300]
+                save(d)
+            return resp
+        if resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        if request.method == "POST" and request.path.rstrip("/") == "/setup":
+            h = resp.get_data(as_text=True)
+            i = h.find("<input name='addr'")
+            i = h.find(">", i) + 1 if i >= 0 else -1
+            if i > 0 and "name='meet'" not in h:
+                h = h[:i] + ("<input name='meet' id='bbmeet' style='display:none' placeholder='Video call link (https://zoom.us/... or https://meet.google.com/...)'>"
+                             "<script>document.addEventListener('DOMContentLoaded',function(){var s=document.getElementById('bbwhere'),m=document.getElementById('bbmeet');"
+                             "if(!s||!m)return;function f(){m.style.display=s.value==='online'?'block':'none'}s.addEventListener('change',f);f()});</script>") + h[i:]
+                resp.set_data(h)
+            return resp
+        if request.method != "GET":
+            return resp
+        if len(p) == 3 and p[0] == "m":
+            shop = load().get(p[1]) or {}
+            h = resp.get_data(as_text=True)
+            if _bb_where(shop) == "online" and _bb_meet(shop) and "id='bbmeet'" not in h:
+                btn = ("<a id='bbmeet' href='" + str(escape(_bb_meet(shop))) + "' target='_blank' rel='noopener' style='display:block;text-align:center;padding:14px;margin:12px 0;"
+                       "background:#1a6dff;color:#fff;border-radius:12px;text-decoration:none;font-weight:800;font-size:17px'>&#128187; Join video call</a>"
+                       "<p style='text-align:center;font-size:13px;color:#556;margin:-6px 0 10px'>Open this link at your appointment time.</p>")
+                i = h.find("</h1>")
+                i = i + 5 if i >= 0 else 0
+                resp.set_data(h[:i] + btn + h[i:])
+        elif len(p) == 2 and p[0] == "d":
+            shop = load().get(p[1]) or {}
+            h = resp.get_data(as_text=True)
+            if "total bookings" in h and "id='bbwarn'" not in h:
+                msg = ""
+                if _bb_needs_addr(shop):
+                    msg = ("<b>&#9888; Customers can't find you.</b> Add your business address so customers get directions. "
+                           "Your business is hidden from the directory until you do. If you only do house calls or online appointments, change "
+                           "\"Where do appointments happen?\" instead.")
+                elif _bb_where(shop) == "online" and not _bb_meet(shop):
+                    msg = "<b>&#9888; Add your video call link.</b> Online customers need it to join. Your business is hidden from the directory until you add it."
+                if msg:
+                    card = ("<div class='card' id='bbwarn' style='background:#fff3cd;border-left:6px solid #f0a500'>" + msg +
+                            "<br><a href='/edit/" + p[1] + "' style='display:inline-block;margin-top:8px;font-weight:700'>&#9999;&#65039; Fix it now</a></div>")
+                    i = h.find("<div class='wrap'>")
+                    i = i + len("<div class='wrap'>") if i >= 0 else h.find("total bookings")
+                    if i < 0:
+                        i = 0
+                    elif "<div class='wrap'>" not in h:
+                        i = h.rfind("<div", 0, i)
+                    resp.set_data(h[:i] + card + h[i:])
+        elif p and p[0] == "mine":
+            h = resp.get_data(as_text=True)
+            d = load()
+            for sid, v in d.items():
+                if not isinstance(v, dict):
+                    continue
+                lab = ""
+                if _bb_needs_addr(v):
+                    lab = "&#9888; Needs business address"
+                elif _bb_where(v) == "online" and not _bb_meet(v):
+                    lab = "&#9888; Needs video call link"
+                if not lab:
+                    continue
+                i = h.find("href='/d/" + sid + "?")
+                if i < 0:
+                    i = h.find("href='/d/" + sid + "'")
+                if i < 0:
+                    continue
+                j = h.find("</a>", i)
+                seg = h[i:j]
+                if "Needs payments connected" in seg:
+                    h = h[:i] + seg.replace("Needs payments connected", lab, 1) + h[j:]
+            resp.set_data(h)
+    except Exception as ex:
+        print("v5 after:", ex)
+    return resp
+# ===== END BB UPGRADE 5 =====
 
 
 import os
