@@ -4583,6 +4583,141 @@ def _bb_offline_sw(resp):
 # ===== END BB OFFLINE =====
 
 
+# ===== BB UPGRADE 7: customer page (all my bookings) =====
+def _bb_hub_when(w):
+    try:
+        t = datetime.strptime(w, "%Y-%m-%d %H:%M")
+        return t.strftime("%a %b %d").replace(" 0", " ") + " at " + t.strftime("%I:%M %p").lstrip("0")
+    except Exception:
+        return w or ""
+
+
+def _bb_hub_find(shop, rt):
+    for k in ("bookings", "cancelled"):
+        for b in shop.get(k, []) or []:
+            if isinstance(b, dict) and b.get("rt") == rt:
+                return b
+    return None
+
+
+@app.route("/my/<sid>/<rt>")
+def bb_my_page(sid, rt):
+    d = load()
+    shop = d.get(sid)
+    if not isinstance(shop, dict) or not rt:
+        return S + "<h1>Not found</h1>", 404
+    me = _bb_hub_find(shop, rt)
+    if me is None:
+        return S + "<h1>Not found</h1><p>This link doesn't match a booking.</p>", 404
+    em = (me.get("email") or "").strip().lower()
+    mine = [b for b in shop.get("bookings", []) if isinstance(b, dict) and b.get("rt") and
+            (b.get("rt") == rt or (em and (b.get("email") or "").strip().lower() == em))]
+    try:
+        now = _bb_local_now(shop).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+    up = sorted([b for b in mine if (b.get("when") or "") >= now], key=lambda b: b.get("when") or "")
+    past = sorted([b for b in mine if (b.get("when") or "") < now], key=lambda b: b.get("when") or "", reverse=True)
+    nm = str(escape(shop.get("name", "")))
+    base = _bb_base()
+    btn = "display:block;text-align:center;padding:13px;margin:8px 0;border-radius:12px;text-decoration:none;font-weight:800"
+    h = "<h1>Your bookings at " + nm + "</h1>"
+    if me.get("name"):
+        h += "<p>Hi " + str(escape(me.get("name", "").split(" ")[0])) + "! Everything you have booked here is on this page. No login needed.</p>"
+    if up:
+        h += "<h3>Coming up</h3>"
+        for b in up:
+            who = ""
+            try:
+                sn = _bb_staff_name(shop, b.get("staff")) if b.get("staff") else ""
+                who = (" with " + str(escape(sn))) if sn else ""
+            except Exception:
+                pass
+            h += ("<div class='card' style='margin:8px 0'><b>" + str(escape(b.get("service", ""))) + "</b>" + who +
+                  "<div style='font-size:17px;margin:4px 0'>&#128197; " + str(escape(_bb_hub_when(b.get("when", "")))) + "</div>"
+                  "<a href='/m/" + sid + "/" + str(escape(b["rt"])) + "' style='" + btn + ";background:#1a6dff;color:#fff'>View, directions, reschedule or cancel</a></div>")
+    else:
+        h += "<p>You don't have any upcoming bookings here right now.</p>"
+    h += "<a href='/b/" + sid + "' style='" + btn + ";border:2px solid #1a6dff;color:#1a6dff'>&#10133; Book another appointment</a>"
+    if past:
+        h += "<p style='color:#556;font-size:14px'>Past visits here: " + str(len(past)) + " (last: " + str(escape(_bb_hub_when(past[0].get("when", "")))) + ")</p>"
+    try:
+        import segno
+        mu = base + "/my/" + sid + "/" + rt
+        bu = base + "/b/" + sid
+        mi = segno.make(mu, error="m").png_data_uri(scale=8, border=2)
+        bi = segno.make(bu, error="m").png_data_uri(scale=8, border=2)
+        fn = "".join(c for c in shop.get("name", "") if c.isalnum()) or "booking"
+        qs = "width:200px;max-width:80%;image-rendering:pixelated"
+        h += ("<div class='card' style='text-align:center;margin-top:14px'><b>&#128273; Your personal QR code</b>"
+              "<p style='font-size:14px;color:#556;margin:4px 0'>Screenshot or save it. Scan it any time to come back to this page.</p>"
+              "<img src='" + mi + "' alt='Your QR code' style='" + qs + "'><br>"
+              "<a href='" + mi + "' download='" + fn + "-my-bookings.png' style='font-weight:700'>&#11015;&#65039; Save my QR</a>"
+              "<p style='font-size:12px;color:#889;margin:6px 0 0'>Keep this private. Anyone with it can see your bookings here.</p></div>"
+              "<div class='card' style='text-align:center;margin-top:14px'><b>&#128241; " + nm + "'s booking QR</b>"
+              "<p style='font-size:14px;color:#556;margin:4px 0'>Share it with a friend, or scan it to book again.</p>"
+              "<img src='" + bi + "' alt='Booking QR code' style='" + qs + "'><br>"
+              "<a href='" + bi + "' download='" + fn + "-book.png' style='font-weight:700'>&#11015;&#65039; Save booking QR</a></div>")
+    except Exception as e:
+        print("hub qr:", e)
+    try:
+        h += _bb_push_box(sid, rt, "customer")
+    except Exception:
+        pass
+    return S + h
+
+
+def bb_qr_customer(sid, rt):
+    d = load()
+    if sid not in d or _bb_hub_find(d[sid], rt) is None:
+        return S + "<h1>Booking not found</h1>", 404
+    return bb_my_page(sid, rt)
+
+
+app.view_functions["bb_qr_customer"] = bb_qr_customer
+
+
+@app.after_request
+def _bb_hub_link(resp):
+    try:
+        p = request.path.strip("/").split("/")
+        if request.method == "GET" and len(p) == 3 and p[0] == "m" and resp.status_code == 200 and resp.mimetype == "text/html":
+            h = resp.get_data(as_text=True)
+            if "<h1>Your booking</h1>" in h and "id='bbhub'" not in h:
+                a = ("<a id='bbhub' href='/my/" + p[1] + "/" + p[2] + "' style='display:block;text-align:center;padding:13px;margin:12px 0;"
+                     "border:2px solid #1a6dff;border-radius:12px;text-decoration:none;font-weight:800'>&#128203; All my bookings + my QR code</a>")
+                i = h.rfind("</body>")
+                resp.set_data(h[:i] + a + h[i:] if i >= 0 else h + a)
+        elif request.method == "GET" and len(p) == 2 and p[0] == "b" and resp.status_code == 200 and resp.mimetype == "text/html":
+            h = resp.get_data(as_text=True)
+            if "id='bbappnote'" not in h and "<form" in h:
+                n = ("<div id='bbappnote' style='display:none;background:#eef3ff;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:15px'>"
+                     "&#128241; <b>You're using the app.</b> After you book, tap <b>Turn on notifications</b> and you'll get reminders and updates "
+                     "for this booking right on this phone.</div>"
+                     "<script>try{if(window.matchMedia('(display-mode: standalone)').matches||navigator.standalone||"
+                     "document.referrer.indexOf('android-app://')===0){document.getElementById('bbappnote').style.display='block'}}catch(e){}</script>")
+                i = h.find("<form")
+                resp.set_data(h[:i] + n + h[i:])
+    except Exception as e:
+        print("hub link:", e)
+    return resp
+
+
+_bb_push_for_v7 = _bb_push_for
+
+
+def _bb_push_for(subject, body, to):
+    try:
+        import re as _re
+        m_ = _re.search(r"https?://\S+/m/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", body or "")
+        if m_ and not (body or "").lstrip().startswith(m_.group(0)):
+            body = m_.group(0) + " " + (body or "")
+    except Exception:
+        pass
+    return _bb_push_for_v7(subject, body, to)
+# ===== END BB UPGRADE 7 =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
