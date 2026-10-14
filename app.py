@@ -4552,6 +4552,37 @@ def _bb_manifest_extras(resp):
 # ===== END BB MANIFEST EXTRAS =====
 
 
+# ===== BB OFFLINE =====
+_BB_SWJS = r"""
+// ===== BB OFFLINE =====
+var BB_CACHE='bb-offline-v1';
+self.addEventListener('install',function(e){e.waitUntil(caches.open(BB_CACHE).then(function(c){return Promise.all(['/offline','/manifest.json'].map(function(u){return c.add(u).catch(function(){})}))}))});
+self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k.indexOf('bb-offline-')===0&&k!==BB_CACHE}).map(function(k){return caches.delete(k)}))}))});
+self.addEventListener('fetch',function(e){var r=e.request;if(r.method!=='GET'||r.mode!=='navigate')return;e.respondWith(fetch(r).catch(function(){return caches.match('/offline').then(function(x){return x||new Response('You are offline. Check your connection and try again.',{headers:{'Content-Type':'text/plain'}})})}))});
+// ===== END BB OFFLINE =====
+"""
+
+
+@app.route("/offline")
+def bb_offline_page():
+    return (S + "<div style='text-align:center;padding:40px 16px'><div style='font-size:56px'>&#128246;</div>"
+            "<h1>You're offline</h1><p>Business-Bookie needs an internet connection. Check your Wi-Fi or data, then try again.</p>"
+            "<button onclick='location.reload()' style='padding:14px 28px;font-size:17px;font-weight:800;border:0;border-radius:12px;background:#1a6dff;color:#fff'>Try again</button></div>")
+
+
+@app.after_request
+def _bb_offline_sw(resp):
+    try:
+        if request.path.endswith("sw.js") and resp.status_code == 200:
+            js = resp.get_data(as_text=True)
+            if "BB OFFLINE" not in js:
+                resp.set_data(js + "\n" + _BB_SWJS)
+    except Exception as e:
+        print("offline sw:", e)
+    return resp
+# ===== END BB OFFLINE =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
