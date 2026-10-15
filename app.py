@@ -4764,6 +4764,317 @@ def _bb_privacy_delete(resp):
 # ===== END BB DELETE DATA =====
 
 
+# ===== BB UPGRADE 8: Japanese for customer pages =====
+_BB_JA = {
+    "Book an appointment": "予約する",
+    "📅 Book an appointment": "📅 予約する",
+    "Book now": "予約を確定する",
+    "Book this time": "この時間で予約する",
+    "Start over": "最初からやり直す",
+    "Back": "戻る",
+    "Search": "検索",
+    "Search by name or type": "店名やジャンルで検索",
+    "Businesses near me": "近くのお店を探す",
+    "Find a business": "お店を探す",
+    "Or browse by category:": "またはカテゴリーから探す:",
+    "Barber": "理容室・バーバー", "Cleaning": "ハウスクリーニング", "Hair salon": "ヘアサロン",
+    "Lashes and brows": "まつ毛・眉", "Massage": "マッサージ", "Nails": "ネイル", "Other": "その他",
+    "Personal trainer": "パーソナルトレーナー", "Photography": "写真撮影", "Restaurant": "レストラン", "Tattoo": "タトゥー",
+    "Nothing found.": "見つかりませんでした。",
+    "Near you": "近くのお店",
+    "No businesses with a location yet.": "位置情報が登録されたお店はまだありません。",
+    "Location not available": "位置情報を取得できません",
+    "No businesses yet.": "まだお店が登録されていません。",
+    "For customers": "お客様",
+    "New to Business-Bookie?": "Business-Bookieは初めてですか？",
+    "Already have a business?": "お店の登録がお済みの方",
+    "🏢 Sign up my business": "🏢 お店を登録する",
+    "🔑 Log in to check bookings": "🔑 ログインして予約を確認",
+    "📱 Get our QR code": "📱 QRコードを表示",
+    "Sign up your business for free": "お店の登録は無料",
+    "Your own booking page in minutes.": "数分であなた専用の予約ページが作れます。",
+    "Free business signup · No credit card needed": "お店の登録は無料 · クレジットカード不要",
+    "✅ Get paid up front": "✅ 料金は事前払い",
+    "✅ No more DMs": "✅ DMでのやり取りは不要",
+    "✅ Your own booking link": "✅ 専用の予約リンク",
+    "Business-Bookie logo": "Business-Bookie ロゴ",
+    "Privacy Policy": "プライバシーポリシー（英語）",
+    "Terms": "利用規約（英語）",
+    "🕐 Hours:": "🕐 営業時間:",
+    "Your name": "お名前",
+    "Phone number": "電話番号",
+    "Phone (optional)": "電話番号（任意）",
+    "Email": "メールアドレス",
+    "Email (we send your booking link)": "メールアドレス（予約リンクをお送りします）",
+    "Email (optional, we tell you when it is your turn)": "メールアドレス（任意・順番が来たらお知らせします）",
+    "Pick a time:": "時間を選ぶ:",
+    "Anything the business should know? (optional)": "お店への連絡事項（任意）",
+    "Cancellation & no-show terms": "キャンセル・無断キャンセルについて",
+    "You pay in full now to hold your spot. You can": "ご予約の確保のため、料金は今すぐ全額お支払いいただきます。",
+    "reschedule with the owner": "日時の変更はお店にご相談ください",
+    ". If you": "。",
+    "cancel": "キャンセル",
+    ", you get a refund minus a small processing fee (card fees + 3.7% service fee).": "した場合は、少額の手数料（カード手数料＋3.7%のサービス料）を差し引いて返金されます。",
+    "No-shows:": "無断キャンセル:",
+    "if you miss your appointment without cancelling, your payment is non-refundable.": "キャンセルの連絡なくご来店されなかった場合、お支払いは返金されません。",
+    "I have read and agree to the cancellation terms": "キャンセル規定を読み、同意します",
+    "Yes, text me appointment confirmations, reminders and cancellation notices from Business-Bookie at this number. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of booking.":
+        "はい、Business-Bookieからの予約確認・リマインダー・キャンセルのお知らせをこの番号にSMSで受け取ります。送信頻度は変動します。通信料がかかる場合があります。停止はSTOP、ヘルプはHELPと返信してください。同意は予約の条件ではありません。",
+    "⏳ Can't find a time that works?": "⏳ ご希望の時間が見つかりませんか？",
+    "Join the waitlist": "キャンセル待ちに登録する",
+    "Join the waitlist. If a spot opens up on your day, we'll email you right away.": "キャンセル待ちに登録すると、ご希望の日に空きが出たらすぐにメールでお知らせします。",
+    "After you book, tap": "予約後に",
+    "Turn on notifications": "通知をオンにする",
+    "and you'll get reminders and updates for this booking right on this phone.": "をタップすると、この予約のリマインダーや変更のお知らせがこのスマホに届きます。",
+    "You're using the app.": "アプリをご利用中です。",
+    "Where would you like your appointment?": "ご予約の場所はどちらにしますか？",
+    "At the shop": "お店で",
+    "Come to me": "出張（ご自宅などへ）",
+    "🚗 Where should we come?": "🚗 どちらに伺いますか？",
+    "Tell us where to come for your appointment.": "伺う場所を入力してください。",
+    "Your address (street, city)": "ご住所（番地・市区町村）",
+    "These times work for your address:": "このご住所で予約できる時間:",
+    "Times below leave room to drive to you.": "移動時間を考慮した時間を表示しています。",
+    "Sorry, that address is outside our service area": "申し訳ありません。そのご住所はサービス対象エリア外です",
+    "Please enter your address": "ご住所を入力してください",
+    "Not enough drive time": "移動時間が足りません",
+    "No other open times fit right now.": "現在、他に空いている時間はありません。",
+    "Who would you like?": "担当者のご希望は？",
+    "Anyone available": "指名なし（空いているスタッフ）",
+    "Sorry, that time was just taken": "申し訳ありません。その時間はたった今埋まりました",
+    "Someone booked it a moment ago. You have": "直前に他の方が予約されました。料金は",
+    "not": "一切",
+    "been charged. Pick another time:": "請求されていません。別の時間をお選びください:",
+    "You're booked!": "ご予約が確定しました！",
+    "You're booked and paid!": "ご予約とお支払いが完了しました！",
+    "After your appointment, leave a review here (save this link):": "ご来店後、こちらからレビューを投稿できます（このリンクを保存してください）:",
+    "Need to cancel or reschedule? Save this link:": "キャンセルや日時変更はこちら（このリンクを保存してください）:",
+    "Check your spam folder if you don't see it.": "届いていない場合は迷惑メールフォルダをご確認ください。",
+    "📅 Add to your calendar": "📅 カレンダーに追加",
+    "Google Calendar": "Googleカレンダー",
+    "Apple / Outlook / other (.ics)": "Apple / Outlook / その他（.ics）",
+    "🔔 Notifications": "🔔 通知",
+    "🔔 Turn on notifications": "🔔 通知をオンにする",
+    "Get an alert on this phone if your appointment changes.": "予約に変更があった場合、このスマホにお知らせします。",
+    "📍 Get directions": "📍 道順を表示",
+    "Your booking": "ご予約内容",
+    "Reschedule (free)": "日時の変更（無料）",
+    "Move my appointment": "予約を移動する",
+    "Cancel": "キャンセル",
+    "Cancelling refunds everything except the processing fee (card fees + 3.7% service fee).": "キャンセルした場合、手数料（カード手数料＋3.7%のサービス料）を除いて全額返金されます。",
+    "No other open times right now to reschedule into.": "現在、変更できる空き時間はありません。",
+    "Booking not found": "予約が見つかりません",
+    "Not found": "見つかりません",
+    "This booking was cancelled": "この予約はキャンセルされました",
+    "Book again": "もう一度予約する",
+    "Booking cancelled": "予約をキャンセルしました",
+    "Rescheduled!": "日時を変更しました！",
+    "No extra charge.": "追加料金はかかりません。",
+    "View booking": "予約を見る",
+    "That time isn't available anymore. Please pick another.": "その時間はもう予約できません。別の時間をお選びください。",
+    "This appointment has already started, so it can't be changed online. Please contact the business.": "このご予約はすでに開始時刻を過ぎているため、オンラインでは変更できません。お店に直接ご連絡ください。",
+    "Online refunds aren't available for this booking. Please contact the business.": "このご予約はオンラインで返金できません。お店に直接ご連絡ください。",
+    "📋 All my bookings + my QR code": "📋 予約一覧とマイQRコード",
+    "Coming up": "今後のご予約",
+    "You don't have any upcoming bookings here right now.": "現在、こちらのお店での今後のご予約はありません。",
+    "View, directions, reschedule or cancel": "確認・道順・日時変更・キャンセル",
+    "➕ Book another appointment": "➕ 別の予約をする",
+    "🔑 Your personal QR code": "🔑 あなた専用のQRコード",
+    "Screenshot or save it. Scan it any time to come back to this page.": "スクリーンショットか保存をしておくと、いつでもスキャンしてこのページに戻れます。",
+    "⬇️ Save my QR": "⬇️ マイQRを保存",
+    "Keep this private. Anyone with it can see your bookings here.": "他の人には見せないでください。このコードがあれば誰でもあなたの予約を見ることができます。",
+    "Share it with a friend, or scan it to book again.": "お友だちに共有したり、スキャンして再予約したりできます。",
+    "⬇️ Save booking QR": "⬇️ 予約用QRを保存",
+    "Your QR code": "あなたのQRコード",
+    "Booking QR code": "予約用QRコード",
+    "Almost!": "もう少しです！",
+    "Join the line": "順番待ちに並ぶ",
+    "Or book an appointment": "または予約する",
+    "Book an appointment instead": "代わりに予約する",
+    "Keep this page open or bookmark it.": "このページを開いたままにするか、ブックマークしてください。",
+    "Thanks for coming in!": "ご来店ありがとうございました！",
+    "The line is full right now": "現在、順番待ちは満員です",
+    "The waitlist is full": "キャンセル待ちは満員です",
+    "Please check back later or pick another day.": "時間をおいて再度ご確認いただくか、別の日をお選びください。",
+    "Please try again a bit later.": "少し時間をおいてもう一度お試しください。",
+    "Please fill in your name, email and day": "お名前、メールアドレス、日付を入力してください",
+    "Back to booking page": "予約ページに戻る",
+    "Go back": "戻る",
+    "💻 Join video call": "💻 ビデオ通話に参加",
+    "Open this link at your appointment time.": "予約時間になったらこのリンクを開いてください。",
+    "You're offline": "オフラインです",
+    "Business-Bookie needs an internet connection. Check your Wi-Fi or data, then try again.": "Business-Bookieの利用にはインターネット接続が必要です。Wi-Fiやモバイル通信を確認して、もう一度お試しください。",
+    "Try again": "再試行",
+}
+_BB_JA_RX = [
+    (r"^Your bookings at (.+)$", r"\1 のご予約一覧"),
+    (r"^Hi (.+?)! Everything you have booked here is on this page\. No login needed\.$", r"\1 様、こちらのお店でのご予約はすべてこのページで確認できます。ログインは不要です。"),
+    (r"^📱 (.+)'s booking QR$", r"📱 \1 の予約用QRコード"),
+    (r"^Appointment at (.+)$", r"\1 でのご予約"),
+    (r"^at (.+)$", r"（\1）"),
+    (r"^When: (.+)$", r"日時: \1"),
+    (r"^Paid: (\$.+)$", r"お支払い済み: \1"),
+    (r"^Cancel booking \(refund (\$.+)\)$", r"予約をキャンセル（返金 \1）"),
+    (r"^Cancel this booking\? You will be refunded (\$.+)\.$", r"この予約をキャンセルしますか？ \1 が返金されます。"),
+    (r"^Booking fee: (\$[\d.,]+)\. Your booking is confirmed and the business has been notified by email\.$", r"予約料: \1。ご予約が確定し、お店にメールで通知しました。"),
+    (r"^Booking fee paid: (\$[\d.,]+)\. The business has been notified\.$", r"お支払い済みの予約料: \1。お店に通知しました。"),
+    (r"^- (\$[\d.,]+) booking fee$", r"- 予約料 \1"),
+    (r"^(\$[\d.,]+) booking fee$", r"予約料 \1"),
+    (r"^- (\d+) businesses$", r"- \1件"),
+    (r"^🚶 Walking in\? Join the line \((\d+) waiting\)$", r"🚶 直接ご来店ですか？順番待ちに並ぶ（\1人待ち）"),
+    (r"^(\d+) min$", r"\1分"),
+    (r"^waiting · about$", r"人待ち · 約"),
+    (r"^with (.+)$", r"担当: \1"),
+    (r"^Location: (.+)$", r"所在地: \1"),
+    (r"^Results for '(.+)'$", r"「\1」の検索結果"),
+    (r"^Your new time: (.+)$", r"新しい日時: \1"),
+    (r"^Refund: (\$.+)$", r"返金額: \1"),
+    (r"^You'll be refunded (\$[\d.,]+)\. It can take 5 to 10 business days to show on your card\.$", r"\1 が返金されます。カードに反映されるまで5〜10営業日かかる場合があります。"),
+    (r"^You can leave a review after your appointment \((.+)\)\. Save this link and come back then\.$", r"ご来店（\1）の後にレビューを投稿できます。このリンクを保存して、後でもう一度アクセスしてください。"),
+    (r"^We emailed your confirmation to$", r"予約確認メールの送信先:"),
+    (r"^(🚗 )?Visit us, or we come to you(.*)$", r"\1ご来店・出張どちらも対応\2"),
+    (r"^(🚗 )?We come to you(.*)$", r"\1出張サービス\2"),
+    (r"^(💻 )?Online appointment · you'll get a video call link after booking$", r"\1オンライン予約 · 予約後にビデオ通話のリンクをお送りします"),
+]
+_BB_JA_SUB = [(" · Serving ", " · 対応エリア: ")]
+_BB_JA_JS = {
+    "Notifications are blocked. Allow them for this site in your browser settings, then try again.": "通知がブロックされています。ブラウザの設定でこのサイトの通知を許可してから、もう一度お試しください。",
+    "This browser cannot show notifications. On iPhone, add this site to your Home Screen first, then open it from there.": "このブラウザでは通知を表示できません。iPhoneの場合は、まずこのサイトをホーム画面に追加してから開いてください。",
+    "Notifications are on for this device.": "この端末で通知がオンになりました。",
+    "Could not turn on notifications": "通知をオンにできませんでした",
+    "Checking drive time to your address...": "ご住所までの移動時間を確認しています...",
+    "No open times fit your address. Try the waitlist below.": "このご住所で予約できる時間がありません。下のキャンセル待ちをご利用ください。",
+    "No open times for this choice. Try another, or the waitlist below.": "この条件では空き時間がありません。別の条件を選ぶか、下のキャンセル待ちをご利用ください。",
+    "No open times for this service. Try the waitlist below.": "このメニューは空き時間がありません。下のキャンセル待ちをご利用ください。",
+}
+_BB_JA_DAY = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
+_BB_JA_MON = {m_: i + 1 for i, m_ in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])}
+_BB_JA_PATHS = ("/find", "/near", "/b/", "/book/", "/m/", "/my/", "/myqr/", "/r/", "/line/", "/wait", "/offline")
+
+
+def _bb_ja_t24(h, mi, ap):
+    h = int(h) % 12 + (12 if ap == "PM" else 0)
+    return "%d:%s" % (h, mi)
+
+
+def _bb_ja_dates(t):
+    import re
+    t = re.sub(r"\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2})(?: at (\d{1,2}):(\d{2}) (AM|PM))?",
+               lambda g: "%d月%s日(%s)" % (_BB_JA_MON[g.group(2)], g.group(3), _BB_JA_DAY[g.group(1)]) + (" " + _bb_ja_t24(g.group(4), g.group(5), g.group(6)) if g.group(4) else ""), t)
+    words = set(re.findall(r"[A-Za-z]+", t))
+    if words and words <= set(_BB_JA_DAY) | {"AM", "PM", "Closed", "closed"} and re.search(r"\d:\d\d ?(AM|PM)", t):
+        t = re.sub(r"(\d{1,2}):(\d{2}) ?(AM|PM)", lambda g: _bb_ja_t24(g.group(1), g.group(2), g.group(3)), t)
+        t = re.sub(r"\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b", lambda g: _BB_JA_DAY[g.group(1)], t)
+        t = t.replace("–", "〜").replace("Closed", "定休日").replace("closed", "定休日")
+    return t
+
+
+def _bb_ja_text(x):
+    import re
+    core = x.strip()
+    if not core:
+        return x
+    lead, trail = x[:len(x) - len(x.lstrip())], x[len(x.rstrip()):]
+    y = _BB_JA.get(core)
+    if y is None:
+        y = core
+        for pat, rep in _BB_JA_RX:
+            if re.match(pat, core):
+                y = re.sub(pat, rep, core)
+                break
+        for a, b in _BB_JA_SUB:
+            y = y.replace(a, b)
+        y = _bb_ja_dates(y)
+    return lead + y + trail if y != core else x
+
+
+def _bb_ja_html(h):
+    import re, html as _h
+    out, i, skip = [], 0, None
+    for mt in re.finditer(r"<[^>]+>", h):
+        seg = h[i:mt.start()]
+        if seg:
+            if skip == "script":
+                for a, b in _BB_JA_JS.items():
+                    seg = seg.replace(a, b)
+                out.append(seg)
+            elif skip:
+                out.append(seg)
+            else:
+                raw = _h.unescape(seg)
+                tr = _bb_ja_text(raw)
+                out.append(seg if tr == raw else _h.escape(tr, quote=False))
+        tag = mt.group(0)
+        low = tag.lower()
+        if low.startswith(("<script", "<style", "<textarea")):
+            skip = low[1:].split()[0].rstrip(">")
+        elif skip and low.startswith("</" + skip):
+            skip = None
+        if not skip or low.startswith(("<script", "<style", "<textarea")):
+            tag = re.sub(r"(\b(?:placeholder|title|alt|aria-label|data-m)=)([\"'])(.*?)\2",
+                         lambda g: g.group(1) + g.group(2) + _h.escape(_bb_ja_text(_h.unescape(g.group(3))), quote=True) + g.group(2), tag)
+        out.append(tag)
+        i = mt.end()
+    out.append(h[i:])
+    return "".join(out)
+
+
+def _bb_lang():
+    try:
+        c = request.cookies.get("bb_lang", "")
+        if c in ("ja", "en"):
+            return c
+        return "ja" if request.accept_languages.best_match(["en", "ja"]) == "ja" else "en"
+    except Exception:
+        return "en"
+
+
+@app.route("/lang/<code>")
+def bb_set_lang(code):
+    from flask import redirect
+    nxt = request.args.get("next", "/")
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/"
+    r = redirect(nxt)
+    if code in ("ja", "en"):
+        r.set_cookie("bb_lang", code, max_age=365 * 86400, samesite="Lax")
+    return r
+
+
+def _bb_ja_after(resp):
+    try:
+        p = request.path
+        if resp.status_code not in (200, 404) or resp.mimetype != "text/html" or not (p == "/" or p.startswith(_BB_JA_PATHS)):
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bblang'" in h:
+            return resp
+        lang = _bb_lang()
+        if lang == "ja":
+            h = _bb_ja_html(h)
+            import re as _re
+            h = _re.sub(r"<html\b[^>]*>", "<html lang='ja'>", h, 1) if _re.search(r"<html\b", h) else "<html lang='ja'>" + h
+        nxt = request.full_path.rstrip("?") if request.method == "GET" else (p if p.startswith(("/b/", "/m/", "/my/", "/find", "/line/")) else "/")
+        from urllib.parse import quote as _q
+        pill = "display:inline-block;padding:5px 12px;border-radius:999px;text-decoration:none;font-size:14px;font-weight:700;"
+        on, off = pill + "background:#1a6dff;color:#fff;", pill + "background:#fff;color:#1a6dff;border:1px solid #1a6dff;"
+        bar = ("<div id='bblang' style='display:flex;justify-content:flex-end;gap:6px;padding:8px 12px'>"
+               "<a href='/lang/en?next=" + _q(nxt) + "' style='" + (on if lang == "en" else off) + "'>English</a>"
+               "<a href='/lang/ja?next=" + _q(nxt) + "' style='" + (on if lang == "ja" else off) + "'>日本語</a></div>")
+        import re
+        mb = re.search(r"<body[^>]*>", h)
+        h = h[:mb.end()] + bar + h[mb.end():] if mb else bar + h
+        resp.set_data(h)
+        resp.headers["Vary"] = "Accept-Language, Cookie"
+    except Exception as e:
+        print("ja:", e)
+    return resp
+
+
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_ja_after)
+# ===== END BB UPGRADE 8 =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
