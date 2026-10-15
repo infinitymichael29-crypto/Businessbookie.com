@@ -4722,6 +4722,7 @@ def _bb_push_for(subject, body, to):
 _BB_APP_PKG = "com.business_bookie.twa"
 _BB_APP_SHA = [
     "B5:E5:2D:0C:65:DA:C1:90:A6:6A:38:0A:AF:41:F7:25:01:EA:B6:A1:58:33:24:00:E5:5A:5B:1C:92:7E:DA:02",
+    "05:06:5A:5F:43:35:62:64:EC:05:47:CF:C7:B2:1D:41:B6:D9:54:EA:B7:8D:53:71:57:9C:5C:DD:BD:A4:7E:9E",
 ]
 
 
