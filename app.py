@@ -4718,6 +4718,52 @@ def _bb_push_for(subject, body, to):
 # ===== END BB UPGRADE 7 =====
 
 
+# ===== BB ASSETLINKS =====
+_BB_APP_PKG = "com.business_bookie.twa"
+_BB_APP_SHA = [
+    "B5:E5:2D:0C:65:DA:C1:90:A6:6A:38:0A:AF:41:F7:25:01:EA:B6:A1:58:33:24:00:E5:5A:5B:1C:92:7E:DA:02",
+]
+
+
+@app.route("/.well-known/assetlinks.json")
+def bb_assetlinks():
+    import json as _j
+    data = [{"relation": ["delegate_permission/common.handle_all_urls"],
+             "target": {"namespace": "android_app", "package_name": _BB_APP_PKG, "sha256_cert_fingerprints": _BB_APP_SHA}}]
+    return app.response_class(_j.dumps(data), mimetype="application/json")
+# ===== END BB ASSETLINKS =====
+
+
+
+
+
+# ===== BB DELETE DATA =====
+_BB_DEL_TXT = ("You can ask us to delete your account and all of your data at any time. Email "
+               "<a href='mailto:infinitymichael29@gmail.com'>infinitymichael29@gmail.com</a> from the email on your account "
+               "and ask us to delete it. We remove your business or booking records, including your name, email, phone number "
+               "and appointment history, within 30 days.")
+
+
+@app.route("/delete-data")
+def bb_delete_data():
+    return S + "<h1>Delete your Business-Bookie data</h1><p>" + _BB_DEL_TXT + "</p><p><a href='/privacy'>Back to Privacy Policy</a></p>"
+
+
+@app.after_request
+def _bb_privacy_delete(resp):
+    try:
+        if request.path.rstrip("/") == "/privacy" and resp.status_code == 200 and resp.mimetype == "text/html":
+            h = resp.get_data(as_text=True)
+            if "id='bbdel'" not in h:
+                note = "<h3 id='bbdel'>Delete your data</h3><p>" + _BB_DEL_TXT + "</p>"
+                i = h.rfind("</body>")
+                resp.set_data(h[:i] + note + h[i:] if i >= 0 else h + note)
+    except Exception as e:
+        print("privacy delete:", e)
+    return resp
+# ===== END BB DELETE DATA =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
