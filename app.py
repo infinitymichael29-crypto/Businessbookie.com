@@ -5076,6 +5076,27 @@ app.after_request_funcs.setdefault(None, []).insert(0, _bb_ja_after)
 # ===== END BB UPGRADE 8 =====
 
 
+# ===== BB FREE LISTING =====
+def _bb_all_free(v):
+    try:
+        sv = (v or {}).get("services") or {}
+        return bool(sv) and all(float(p or 0) == 0 for p in sv.values())
+    except Exception:
+        return False
+
+
+_bb_listed_v9 = _bb_listed
+
+
+def _bb_listed(v):
+    if _bb_listed_v9(v):
+        return True
+    if isinstance(v, dict) and _bb_all_free(v):
+        return _bb_listed_v9(dict(v, payouts_on=True))
+    return False
+# ===== END BB FREE LISTING =====
+
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
