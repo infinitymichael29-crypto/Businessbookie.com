@@ -399,7 +399,7 @@ def mine():
     _tu = sum(len([b for b in v.get("bookings", []) if str(b.get("when", "")) >= _now]) for _, v in owned)
     _tb = sum(len(v.get("bookings", [])) for _, v in owned)
     summ = "<div class='card' style='display:flex;justify-content:space-around;text-align:center'><div><div style='" + _num + "'>" + str(len(owned)) + "</div>businesses</div><div><div style='" + _num + "'>" + str(_tu) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(_tb) + "</div>total bookings</div></div>"
-    return head + "<div class='top' style='text-align:center'><h1>My businesses</h1></div><div class='wrap'>" + summ + rows + "<div style='display:flex;gap:10px;margin-top:12px'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/find' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#128269; Find a business</a></div><p style='text-align:center'><a href='/logout'>Log out</a></p></div>"
+    return head + "<div class='top' style='text-align:center'><h1>My businesses</h1></div><div class='wrap'>" + summ + rows + "<div style='display:flex;gap:10px;margin-top:12px'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/find' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#128269; Find / book a business</a></div><p style='text-align:center'><a href='/logout'>Log out</a></p></div>"
 
 
 import os, secrets as _bb_secrets
@@ -5096,6 +5096,503 @@ def _bb_listed(v):
     return False
 # ===== END BB FREE LISTING =====
 
+
+# ===== BB UPGRADE 9: my appointments on this phone =====
+import re as _bbre
+_BB_AP_RE = _bbre.compile(r"/(?:m|my|r)/([A-Za-z0-9_-]{1,64})/([A-Za-z0-9_-]{1,64})")
+
+
+def _bb_ap_get():
+    out = []
+    for x in (request.cookies.get("bb_my", "") or "").split(","):
+        if ":" in x:
+            a, b = x.split(":", 1)
+            if _bbre.fullmatch(r"[A-Za-z0-9_-]{1,64}", a) and _bbre.fullmatch(r"[A-Za-z0-9_-]{1,64}", b) and (a, b) not in out:
+                out.append((a, b))
+    return out[:20]
+
+
+def _bb_ap_list(pairs):
+    d = load()
+    try:
+        now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        now = ""
+    rows, seen = [], set()
+    for sid, rt in pairs:
+        shop = d.get(sid)
+        if not isinstance(shop, dict):
+            continue
+        me = _bb_hub_find(shop, rt)
+        if me is None:
+            continue
+        em = (me.get("email") or "").strip().lower()
+        for b in shop.get("bookings", []) or []:
+            if not isinstance(b, dict) or not b.get("rt") or b["rt"] in seen:
+                continue
+            if b["rt"] == rt or (em and (b.get("email") or "").strip().lower() == em):
+                try:
+                    nl = _bb_local_now(shop).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    nl = now
+                if (b.get("when") or "") >= nl:
+                    seen.add(b["rt"])
+                    rows.append((b.get("when") or "", sid, shop, b))
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
+def _bb_ap_card(rows, limit=None):
+    btn = "display:block;text-align:center;padding:12px;margin:6px 0;border-radius:12px;text-decoration:none;font-weight:800"
+    h = ""
+    for when, sid, shop, b in (rows[:limit] if limit else rows):
+        h += ("<a href='/m/" + sid + "/" + str(escape(b["rt"])) + "' style='display:block;text-decoration:none;color:inherit;background:#fff;"
+              "border:1px solid #d7e0f0;border-radius:12px;padding:10px 12px;margin:6px 0'>"
+              "<b>" + str(escape(b.get("service", ""))) + "</b> <span style='color:#556'>" + str(escape(shop.get("name", ""))) + "</span>"
+              "<div style='font-size:16px;margin-top:2px'>&#128197; " + str(escape(_bb_hub_when(when))) + "</div></a>")
+    return h
+
+
+@app.route("/appointments")
+def bb_appointments():
+    rows = _bb_ap_list(_bb_ap_get())
+    h = "<h1>My appointments</h1>"
+    if rows:
+        h += "<p>Bookings made on this phone. Tap one to see directions, reschedule or cancel.</p>" + _bb_ap_card(rows)
+    else:
+        h += "<p>No upcoming appointments saved on this phone yet. After you book, they show up here automatically.</p>"
+    h += ("<a href='/find' style='display:block;text-align:center;padding:13px;margin:12px 0;border:2px solid #1a6dff;color:#1a6dff;"
+          "border-radius:12px;text-decoration:none;font-weight:800'>&#10133; Book an appointment</a>"
+          "<p style='font-size:13px;color:#556'>Shared phone? <a href='/appointments/forget'>Forget my appointments on this phone</a></p>")
+    return S + h
+
+
+@app.route("/appointments/forget")
+def bb_appointments_forget():
+    from flask import redirect
+    r = redirect("/appointments")
+    r.delete_cookie("bb_my")
+    return r
+
+
+@app.after_request
+def _bb_ap_after(resp):
+    try:
+        if resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        p = request.path
+        h = resp.get_data(as_text=True)
+        add = None
+        if request.method == "GET" and (p.startswith("/m/") or p.startswith("/my/")):
+            g = _BB_AP_RE.match(p)
+            if g and ("<h1>Your booking" in h or "Your bookings at" in h):
+                add = (g.group(1), g.group(2))
+        elif "You're booked" in h:
+            g = _BB_AP_RE.search(h)
+            if g:
+                add = (g.group(1), g.group(2))
+        if add:
+            cur = [x for x in _bb_ap_get() if x != add]
+            val = ",".join(a + ":" + b for a, b in ([add] + cur)[:20])
+            resp.set_cookie("bb_my", val, max_age=2 * 365 * 86400, samesite="Lax", httponly=True)
+        if request.method == "GET" and p in ("/", "/find") and "id='bbap'" not in h:
+            rows = _bb_ap_list(_bb_ap_get())
+            if rows:
+                card = ("<div id='bbap' style='background:#eef3ff;border-radius:14px;padding:12px;margin:12px;color:#0b1f4d;text-align:left'>"
+                        "<b style='font-size:17px'>&#128197; Your upcoming appointments</b>" + _bb_ap_card(rows, 3) +
+                        "<a href='/appointments' style='font-weight:700'>See all my appointments &rarr;</a></div>")
+                mb = _bbre.search(r"<body[^>]*>", h)
+                i = mb.end() if mb else 0
+                if p == "/find":
+                    j = h.find("</h1>")
+                    i = j + 5 if j >= 0 else i
+                resp.set_data(h[:i] + card + h[i:])
+    except Exception as e:
+        print("appointments:", e)
+    return resp
+
+
+try:
+    _BB_JA_PATHS = _BB_JA_PATHS + ("/appointments",)
+    _BB_JA.update({
+        "My appointments": "マイ予約",
+        "Bookings made on this phone. Tap one to see directions, reschedule or cancel.": "このスマホで予約した内容です。タップすると道順の確認・日時変更・キャンセルができます。",
+        "No upcoming appointments saved on this phone yet. After you book, they show up here automatically.": "このスマホに保存された今後の予約はまだありません。予約すると自動的にここに表示されます。",
+        "➕ Book an appointment": "➕ 予約する",
+        "Shared phone?": "共用のスマホですか？",
+        "Forget my appointments on this phone": "このスマホから予約情報を削除",
+        "📅 Your upcoming appointments": "📅 今後のご予約",
+        "See all my appointments →": "すべての予約を見る →",
+    })
+except NameError:
+    pass
+# ===== END BB UPGRADE 9 =====
+
+
+
+# ===== BB PHONE ONLY =====
+_bb_ap_list_v10 = _bb_ap_list
+def _bb_ap_list(pairs):
+    want = set((a, b) for a, b in pairs)
+    return [x for x in _bb_ap_list_v10(pairs) if (x[1], (x[3] or {}).get("rt")) in want]
+# ===== END BB PHONE ONLY =====
+
+
+# ===== BB BOOK ONCE =====
+import time as _bb_ot, re
+from flask import make_response as _bb_mr, redirect as _bb_rd
+_BB_ONCE = {}
+_BB_ONCE_JS = ("<script id='bbonce'>(function(){document.addEventListener('submit',function(e){var f=e.target;"
+  "if(!/\\/book\\//.test(f.getAttribute('action')||''))return;if(f.dataset.bbSent){e.preventDefault();return}"
+  "f.dataset.bbSent='1';var b=f.querySelector('button[type=submit],button:not([type])');"
+  "if(b)setTimeout(function(){b.disabled=true;b.style.opacity='.6';b.textContent+=' ⏳'},0)},true);"
+  "window.addEventListener('pageshow',function(){document.querySelectorAll('form').forEach(function(f){delete f.dataset.bbSent;"
+  "f.querySelectorAll('button').forEach(function(b){b.disabled=false;b.style.opacity='';b.textContent=b.textContent.replace(' ⏳','')})})})})();</script>")
+def _bb_once_key(sid):
+    f = request.form
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+    return (sid, (f.get("email") or "").strip().lower(), (f.get("phone") or "").strip(), f.get("when") or "", f.get("service") or "", ip)
+def _bb_once_wrap(fn):
+    def w(*a, **kw):
+        if request.method != "POST":
+            return fn(*a, **kw)
+        sid = kw.get("sid") or (a[0] if a else "")
+        k = _bb_once_key(sid)
+        now = _bb_ot.time()
+        for x in [x for x, v in list(_BB_ONCE.items()) if now - v[0] > 600]:
+            _BB_ONCE.pop(x, None)
+        if k in _BB_ONCE:
+            kind, val = _BB_ONCE[k][1]
+            return _bb_rd(val) if kind == "go" else val
+        def _n():
+            try:
+                return len((load().get(sid) or {}).get("bookings") or [])
+            except Exception:
+                return -1
+        n0 = _n()
+        r = _bb_mr(fn(*a, **kw))
+        n1 = _n() if r.status_code < 400 else n0
+        loc = r.headers.get("Location") or ""
+        h = "" if r.direct_passthrough else r.get_data(as_text=True)
+        mine = re.compile(r"/(?:m|my|r)/%s/" % re.escape(sid))
+        if n0 >= 0 and n1 > n0 and 300 <= r.status_code < 400 and loc:
+            _BB_ONCE[k] = (now, ("go", loc))
+        elif n0 >= 0 and n1 > n0 and r.status_code == 200 and "just taken" not in h:
+            _BB_ONCE[k] = (now, ("page", h))
+        elif "just taken" in h:
+            for _ in range(10):
+                _bb_ot.sleep(0.2)
+                if k in _BB_ONCE:
+                    kind, val = _BB_ONCE[k][1]
+                    return _bb_rd(val) if kind == "go" else val
+        return r
+    return w
+_bb_once_ep = [x.endpoint for x in app.url_map.iter_rules() if x.rule == "/book/<sid>" and "POST" in (x.methods or ())]
+for _e in _bb_once_ep:
+    app.view_functions[_e] = _bb_once_wrap(app.view_functions[_e])
+@app.after_request
+def _bb_once_after(resp):
+    try:
+        if request.method == "GET" and request.path.startswith("/b/") and resp.mimetype == "text/html" and not resp.direct_passthrough:
+            h = resp.get_data(as_text=True)
+            if "action='/book/" in h or 'action="/book/' in h:
+                if "id='bbonce'" not in h:
+                    h = h.replace("</body>", _BB_ONCE_JS + "</body>", 1) if "</body>" in h else h + _BB_ONCE_JS
+                    resp.set_data(h)
+    except Exception:
+        pass
+    return resp
+# ===== END BB BOOK ONCE =====
+
+
+# ===== BB BOOK ONCE 2 =====
+from flask import g as _bb_og
+def _bb_once_sid():
+    pp = request.path.strip("/").split("/")
+    return pp[1] if request.method == "POST" and len(pp) == 2 and pp[0] == "book" else None
+def _bb_once_count(sid):
+    try:
+        return len((load().get(sid) or {}).get("bookings") or [])
+    except Exception:
+        return -1
+def _bb_once_replay(k):
+    kind, val = _BB_ONCE[k][1]
+    return _bb_rd(val) if kind == "go" else val
+def _bb_once_before():
+    sid = _bb_once_sid()
+    if not sid:
+        return None
+    k = _bb_once_key(sid)
+    now = _bb_ot.time()
+    for x in [x for x, v in list(_BB_ONCE.items()) if now - v[0] > 600]:
+        _BB_ONCE.pop(x, None)
+    if k in _BB_ONCE:
+        _bb_og.bb_once_hit = True
+        return _bb_once_replay(k)
+    _bb_og.bb_once_n0 = _bb_once_count(sid)
+    return None
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_once_before)
+@app.after_request
+def _bb_once_after2(resp):
+    try:
+        sid = _bb_once_sid()
+        if not sid or getattr(_bb_og, "bb_once_hit", False):
+            return resp
+        k = _bb_once_key(sid)
+        n0 = getattr(_bb_og, "bb_once_n0", -1)
+        loc = resp.headers.get("Location") or ""
+        h = "" if resp.direct_passthrough else resp.get_data(as_text=True)
+        if k not in _BB_ONCE and n0 >= 0 and resp.status_code < 400 and "just taken" not in h and _bb_once_count(sid) > n0:
+            _BB_ONCE[k] = (_bb_ot.time(), ("go", loc) if 300 <= resp.status_code < 400 and loc else ("page", h))
+        elif "just taken" in h:
+            for _ in range(10):
+                if k in _BB_ONCE:
+                    return _bb_mr(_bb_once_replay(k))
+                _bb_ot.sleep(0.2)
+    except Exception:
+        pass
+    return resp
+# ===== END BB BOOK ONCE 2 =====
+
+
+# ===== BB BOOK ONCE 3 =====
+def _bb_once_key(sid):
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+    return (sid, ip, tuple(sorted((k, v.strip()) for k, v in request.form.items(multi=True))))
+# ===== END BB BOOK ONCE 3 =====
+
+
+# ===== BB BOOK FOR CUSTOMER =====
+def _bb_fc_owner(sid):
+    try:
+        return bool(_bb_sess.get("own_" + sid))
+    except Exception:
+        return False
+def _bb_fc_post_sid():
+    pp = request.path.strip("/").split("/")
+    if request.method == "POST" and len(pp) == 2 and pp[0] == "book" and request.form.get("bb_for") == "customer" and _bb_fc_owner(pp[1]):
+        return pp[1]
+    return None
+def _bb_fc_skip():
+    if _bb_fc_post_sid():
+        return True
+    pp = request.path.strip("/").split("/")
+    if request.method == "GET" and len(pp) == 3 and pp[0] in ("m", "my", "r") and _bb_fc_owner(pp[1]):
+        try:
+            shop = load().get(pp[1]) or {}
+            for b in (shop.get("bookings") or []) + (shop.get("cancelled") or []):
+                if isinstance(b, dict) and b.get("rt") == pp[2] and b.get("by_owner"):
+                    return True
+        except Exception:
+            pass
+    return False
+def _bb_fc_before():
+    sid = _bb_fc_post_sid()
+    if sid:
+        try:
+            _bb_og.bb_fc_rts = set(b.get("rt") for b in (load().get(sid) or {}).get("bookings") or [] if isinstance(b, dict))
+        except Exception:
+            _bb_og.bb_fc_rts = None
+app.before_request_funcs.setdefault(None, []).append(_bb_fc_before)
+_bb_fc_fl = app.after_request_funcs.setdefault(None, [])
+def _bb_fc_mk(f):
+    def _bb_ap_after_fc(resp):
+        try:
+            if _bb_fc_skip():
+                return resp
+        except Exception:
+            pass
+        return f(resp)
+    return _bb_ap_after_fc
+_bb_fc_wrapped = 0
+for _i, _f in enumerate(list(_bb_fc_fl)):
+    if getattr(_f, "__name__", "") == "_bb_ap_after":
+        _bb_fc_fl[_i] = _bb_fc_mk(_f)
+        _bb_fc_wrapped += 1
+def _bb_fc_top(h, box):
+    return h.replace("</h1>", "</h1>" + box, 1) if "</h1>" in h else box + h
+@app.after_request
+def _bb_fc_after(resp):
+    try:
+        if resp.direct_passthrough or resp.mimetype != "text/html":
+            return resp
+        pp = request.path.strip("/").split("/")
+        if request.method == "GET" and len(pp) == 2 and pp[0] == "d" and _bb_fc_owner(pp[1]):
+            h = resp.get_data(as_text=True)
+            a = "<h3>Upcoming</h3>"
+            if "id='bbfc'" not in h and a in h:
+                btn = ("<a id='bbfc' href='/b/" + pp[1] + "?for=customer' style='display:block;text-align:center;background:#1a6dff;color:#fff;"
+                       "padding:14px;border-radius:12px;text-decoration:none;font-weight:700;margin:10px 0'>&#128100; Book for a customer</a>")
+                resp.set_data(h.replace(a, btn + a, 1))
+            return resp
+        fc_get = request.method == "GET" and len(pp) == 2 and pp[0] == "b" and request.args.get("for") == "customer" and _bb_fc_owner(pp[1])
+        fc_post = _bb_fc_post_sid()
+        if not (fc_get or fc_post):
+            return resp
+        sid = pp[1]
+        h = resp.get_data(as_text=True)
+        rx = re.compile(r"(<form[^>]*action=['\"]/book/%s['\"][^>]*>)" % re.escape(sid))
+        if "name='bb_for'" not in h:
+            h = rx.sub(lambda mm: mm.group(1) + "<input type='hidden' name='bb_for' value='customer'>", h)
+        if fc_get and "id='bbfcban'" not in h:
+            h = _bb_fc_top(h, "<div id='bbfcban' style='background:#fff4d6;border:2px solid #f0b400;border-radius:12px;padding:12px;margin:10px 0'>"
+                           "<b>&#128100; Booking for a customer</b><br>Enter <b>their</b> name, phone and email. This goes on your dashboard and "
+                           "won't show up as your own appointment.<br><a href='/d/" + sid + "'>&#8592; Back to dashboard</a></div>")
+        old = getattr(_bb_og, "bb_fc_rts", None)
+        if fc_post and old is not None and resp.status_code < 400:
+            d = load()
+            shop = d.get(sid) or {}
+            new = [b for b in shop.get("bookings") or [] if isinstance(b, dict) and b.get("rt") and b.get("rt") not in old]
+            if new:
+                for b in new:
+                    b["by_owner"] = True
+                save(d)
+                h = _bb_fc_top(h, "<div id='bbfcok' style='background:#e7f8ec;border:2px solid #2bb24c;border-radius:12px;padding:12px;margin:10px 0'>"
+                               "<b>&#9989; Booked for your customer.</b> They get the confirmation email. It's on your dashboard and was "
+                               "not saved as your own appointment.<br><a href='/d/" + sid + "'>&#8592; Back to dashboard</a></div>")
+        resp.set_data(h)
+    except Exception:
+        pass
+    return resp
+# ===== END BB BOOK FOR CUSTOMER =====
+
+
+# ===== BB HOME BUTTON =====
+@app.after_request
+def _bb_home_after(resp):
+    try:
+        if resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code >= 400:
+            return resp
+        pp = request.path.strip("/").split("/")
+        if len(pp) < 2 or pp[0] not in ("book", "paid", "m", "my"):
+            return resp
+        if pp[0] == "book" and request.method != "POST":
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbhomebtn'" in h:
+            return resp
+        own = False
+        try:
+            own = bool(_bb_sess.get("own_" + pp[1]))
+        except Exception:
+            pass
+        sty = "display:block;text-align:center;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;margin:10px 0;"
+        btn = "<div id='bbhomebtn' style='margin:18px 0'>"
+        if own:
+            btn += "<a href='/d/" + pp[1] + "' style='" + sty + "background:#1a6dff;color:#fff'>&#128200; Back to my dashboard</a>"
+        btn += "<a href='/?home=1' style='" + sty + "border:2px solid #1a6dff;color:#1a6dff;background:#fff'>&#127968; Home</a>"
+        btn += "<a href='/find' style='" + sty + "border:2px solid #1a6dff;color:#1a6dff;background:#fff'>&#128269; Book another business</a></div>"
+        h = h.replace("</body>", btn + "</body>", 1) if "</body>" in h else h + btn
+        resp.set_data(h)
+    except Exception:
+        pass
+    return resp
+# ===== END BB HOME BUTTON =====
+
+
+# ===== BB OWNER HOME =====
+from urllib.parse import urlparse as _bb_oh_up, quote as _bb_oh_q
+try:
+    _BB_JA["Find / book a business"] = "お店を探す・予約する"
+    _BB_JA["My personal appointments"] = "自分の予約"
+except Exception:
+    pass
+def _bb_oh_owned():
+    try:
+        return [k[4:] for k in list(_bb_sess.keys()) if k.startswith("own_") and _bb_sess.get(k)]
+    except Exception:
+        return []
+def _bb_oh_before():
+    if request.method != "GET" or request.path != "/" or request.args.get("home"):
+        return None
+    ref = request.headers.get("Referer") or ""
+    if ref and _bb_oh_up(ref).netloc == request.host:
+        return None
+    try:
+        d = load()
+        own = [x for x in _bb_oh_owned() if isinstance(d.get(x), dict)]
+    except Exception:
+        return None
+    if own:
+        return _bb_rd("/mine?em=" + _bb_oh_q(d[own[0]].get("email") or ""))
+    return None
+app.before_request_funcs.setdefault(None, []).append(_bb_oh_before)
+_BB_OH_BTN = ("<a href='/find' style='display:block;text-align:center;padding:12px;margin:8px 0;border:2px solid #1a6dff;color:#1a6dff;"
+              "background:#fff;border-radius:12px;text-decoration:none;font-weight:800'>&#128269; Find / book a business</a>")
+@app.after_request
+def _bb_oh_after(resp):
+    try:
+        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        pp = request.path.strip("/").split("/")
+        if not (len(pp) == 2 and pp[0] == "d" and _bb_sess.get("own_" + pp[1])):
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbmyap'" in h:
+            return resp
+        rows = _bb_ap_list(_bb_ap_get())
+        card = ("<div id='bbmyap' class='card' style='text-align:left'><b>&#128197; My personal appointments</b>"
+                "<div style='font-size:13px;color:#556'>Places you booked as a customer. These are separate from your business bookings.</div>")
+        card += _bb_ap_card(rows, 5) if rows else "<p style='margin:8px 0'>None yet.</p>"
+        if len(rows) > 5:
+            card += "<a href='/appointments' style='font-weight:700'>See all &rarr;</a>"
+        card += _BB_OH_BTN + "</div>"
+        a = "<div class='card'><a href='/pw/"
+        h = h.replace(a, card + a, 1) if a in h else (h.replace("</body>", card + "</body>", 1) if "</body>" in h else h + card)
+        resp.set_data(h)
+    except Exception:
+        pass
+    return resp
+# ===== END BB OWNER HOME =====
+
+
+# ===== BB STAY LOGGED IN =====
+from datetime import timedelta as _bb_sl_td
+app.config["PERMANENT_SESSION_LIFETIME"] = _bb_sl_td(days=90)
+def _bb_stay_logged():
+    try:
+        if not _bb_sess.permanent and any(k.startswith("own_") for k in list(_bb_sess.keys())):
+            _bb_sess.permanent = True
+    except Exception:
+        pass
+app.before_request_funcs.setdefault(None, []).append(_bb_stay_logged)
+# ===== END BB STAY LOGGED IN =====
+
+
+# ===== BB MINE APPTS =====
+def _bb_ap_compact(rows, limit=None):
+    h = ""
+    for when, sid, shop, b in (rows[:limit] if limit else rows):
+        h += ("<a href='/m/" + sid + "/" + str(escape(b["rt"])) + "' style='display:flex;justify-content:space-between;gap:8px;"
+              "padding:7px 2px;border-top:1px solid #d7e0f0;text-decoration:none;color:#0b1f4d;font-size:15px'>"
+              "<span><b>" + str(escape(shop.get("name", ""))) + "</b> <span style='color:#556'>&middot; " + str(escape(b.get("service", ""))) + "</span></span>"
+              "<span style='color:#556;white-space:nowrap'>" + str(escape(_bb_hub_when(when).replace(" at ", ", "))) + "</span></a>")
+    return h
+@app.after_request
+def _bb_mine_ap_after(resp):
+    try:
+        if request.method != "GET" or request.path != "/mine" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        if not _bb_oh_owned():
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbmineap'" in h:
+            return resp
+        rows = _bb_ap_list(_bb_ap_get())
+        card = ("<div id='bbmineap' style='background:#eef3ff;border-radius:14px;padding:12px;margin:12px 0;color:#0b1f4d;text-align:left'>"
+                "<b style='font-size:17px'>&#128197; My personal appointments</b>"
+                "<div style='font-size:13px;color:#556'>Places you booked as a customer. Separate from your business bookings.</div>")
+        card += _bb_ap_compact(rows, 5) if rows else "<p style='margin:8px 0'>None yet.</p>"
+        if len(rows) > 5:
+            card += "<a href='/appointments' style='font-weight:700'>See all &rarr;</a>"
+        card += _BB_OH_BTN + "</div>"
+        j = h.find("<h1")
+        h = h[:j] + card + h[j:] if j >= 0 else card + h
+        resp.set_data(h)
+    except Exception:
+        pass
+    return resp
+# ===== END BB MINE APPTS =====
 
 import os
 if __name__ == "__main__":
