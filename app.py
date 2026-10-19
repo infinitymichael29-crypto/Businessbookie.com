@@ -6286,7 +6286,7 @@ def _bb_msg_hist(shop, k, limit=20):
         return "<p style='color:#556;margin:6px 0'>No messages sent yet.</p>"
     out = ""
     for x in rows:
-        icon = "&#9993;&#65039; Email" if x.get("via") == "email" else "&#128241; Text from your phone"
+        icon = _bb_msg_via(x)
         out += ("<div style='border-left:4px solid #1a6dff;background:#eef3ff;border-radius:8px;padding:8px 10px;margin:6px 0;text-align:left;font-size:14px'>"
                 "<div style='color:#556;font-size:12px'>" + e(_bb_hub_when(x.get("at") or "")) + " &middot; " + icon + "</div>" + e(x.get("text", "")) + "</div>")
     return out
@@ -6316,17 +6316,9 @@ def bb_msg(sid):
         if act == "email":
             if not text:
                 msg = "<p style='color:#e23b3b'><b>Type a message first.</b></p>"
-            elif not em:
-                msg = "<p style='color:#e23b3b'><b>This customer has no email. Use Text from my phone.</b></p>"
             else:
-                try:
-                    _bb_msg_send(shop, em, text)
-                    _bb_msg_log(shop, k, "email", em, text)
-                    save(d)
-                    msg = "<p style='color:#1faa59'><b>&#9989; Sent to " + e(em) + "</b></p>"
-                    text = ""
-                except Exception as ex:
-                    msg = "<p style='color:#e23b3b'><b>Couldn't send:</b> " + e(str(ex)) + "</p>"
+                msg = _bb_msg_deliver(d, sid, shop, b, k, em, text)
+                text = ""
     chips = "".join("<button type='button' onclick=\"document.getElementById('bbmsgt').value=this.dataset.t\" data-t='" + e(q) + "' "
                     "style='width:auto;display:inline-block;margin:3px;padding:7px 10px;font-size:13px;background:#eef3ff;color:#1a6dff;border:1px solid #c9d8ff'>" + e(q[:34]) + "&hellip;</button>" for q in _BB_MSG_QUICK)
     js = ("<script>function bbsms(){var t=document.getElementById('bbmsgt').value;if(!t){alert('Type a message first');return false}"
@@ -6335,8 +6327,8 @@ def bb_msg(sid):
           "location.href='sms:" + e(ph) + "?&body='+encodeURIComponent(t);return false}</script>")
     form = ("<form method='post'><input type='hidden' name='rt' value='" + e(b.get("rt", "")) + "'><p><b>Quick messages</b> (tap one, then edit)</p>" + chips
             + "<textarea id='bbmsgt' name='text' rows='4' placeholder='Type your message'>" + e(text) + "</textarea>"
-            + ("<button name='act' value='email'>&#9993;&#65039; Send by email</button>" if em else "")
-            + ("<button type='button' onclick='return bbsms()' style='background:#1faa59'>&#128241; Text from my phone</button>" if ph else "")
+            + "<button name='act' value='email'>&#128227; Send</button><p style='font-size:13px;color:#556;margin:4px 0'>Goes to their phone as a notification, to Updates in the app, and to their email.</p>"
+            + ""
             + "</form><p style='font-size:12px;color:#556'>Keep messages about appointments. Promotional messages need the customer's separate permission.</p>")
     head = ("<h1>&#128172; Message " + e(b.get("name", "")) + "</h1><div class='card' style='text-align:left'>" + (("&#9993;&#65039; " + e(em) + "<br>") if em else "")
             + (("&#128222; " + e(ph)) if ph else "") + "</div>")
@@ -6379,6 +6371,78 @@ def _bb_msg_after(resp):
         print("messages:", ex)
     return resp
 # ===== END BB MESSAGES =====
+
+
+# ===== BB MESSAGES 2 =====
+def _bb_msg_bg(fn, *a):
+    import threading
+    threading.Thread(target=fn, args=a, daemon=True).start()
+def _bb_msg_via(x):
+    ch = x.get("ch")
+    if not ch:
+        return "&#9993;&#65039; Email" if x.get("via") == "email" else "&#128241; Text from your phone"
+    lab = {"push": "&#128276; Notification", "email": "&#9993;&#65039; Email", "app": "&#128197; Updates"}
+    return " + ".join(lab[c] for c in ch if c in lab)
+def _bb_msg_deliver(d, sid, shop, b, k, em, text):
+    e = lambda x: str(escape(x))
+    ch, problems = ["app"], []
+    subs = []
+    for lst in ("bookings", "cancelled", "noshows"):
+        for x in shop.get(lst) or []:
+            if isinstance(x, dict) and _bb_msg_key(x) == k:
+                subs += [p for p in x.get("push") or [] if isinstance(p, dict) and p not in subs]
+    if subs:
+        try:
+            _bb_msg_bg(_bb_push_send, subs, "Message from " + (shop.get("name") or "your business"), text[:180], request.host_url + "m/" + sid + "/" + str(b.get("rt")))
+            ch.append("push")
+        except Exception as ex:
+            problems.append("notification: " + str(ex))
+    if em:
+        try:
+            _bb_msg_send(shop, em, text)
+            ch.append("email")
+        except Exception as ex:
+            problems.append("email: " + str(ex))
+    _bb_msg_log(shop, k, "app", em, text)
+    shop["msgs"][-1]["ch"] = ch
+    save(d)
+    out = "<p style='color:#1faa59'><b>&#9989; Sent:</b> " + _bb_msg_via({"ch": ch}) + "</p>"
+    if "push" not in ch and "email" not in ch:
+        out += "<p style='color:#8a6d00'>They haven't turned on notifications and have no email, so they'll see it in Updates next time they open the app.</p>"
+    if problems:
+        out += "<p style='color:#e23b3b'>Couldn't send " + e("; ".join(problems)) + "</p>"
+    return out
+_bb_cu_items_vmsg = _bb_cu_items
+def _bb_cu_items():
+    out = _bb_cu_items_vmsg()
+    try:
+        d = load()
+        done = set()
+        for sid, rt in _bb_ap_get():
+            shop = d.get(sid)
+            if not isinstance(shop, dict):
+                continue
+            b = _bb_msg_find(shop, rt=rt)
+            if not b:
+                continue
+            k = _bb_msg_key(b)
+            if (sid, k) in done:
+                continue
+            done.add((sid, k))
+            for i, x in enumerate(shop.get("msgs") or []):
+                if isinstance(x, dict) and x.get("k") == k and x.get("via") == "app":
+                    t = str(escape(x.get("text", "")))
+                    out.append((sid + "msg" + str(i) + (x.get("at") or "").replace(" ", "").replace(":", "").replace("-", ""), "yellow", "&#128172;",
+                                "Message from " + str(escape(shop.get("name", ""))), t[:200] + ("&hellip;" if len(t) > 200 else ""),
+                                str(escape(_bb_hub_when(x.get("at") or ""))), "/m/" + sid + "/" + str(b.get("rt")), x.get("at") or ""))
+    except Exception as ex:
+        print("message updates:", ex)
+    return out
+try:
+    _BB_JA.update({"Message from": "お店からのメッセージ："})
+except Exception:
+    pass
+# ===== END BB MESSAGES 2 =====
 
 import os
 if __name__ == "__main__":
