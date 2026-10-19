@@ -6608,6 +6608,84 @@ except Exception:
     pass
 # ===== END BB PUSH DEAD =====
 
+
+# ===== BB DAY MSG LINES =====
+import html as _bb_dm_html
+_bb_dm_deliver_prev = _bb_msg_deliver
+def _bb_msg_deliver(d, sid, shop, b, k, em, text):
+    out = _bb_dm_deliver_prev(d, sid, shop, b, k, em, text)
+    try:
+        ms = shop.get("msgs") or []
+        if ms and isinstance(ms[-1], dict) and not ms[-1].get("rt") and ms[-1].get("text") == text[:1000]:
+            ms[-1]["rt"] = str(b.get("rt") or "")
+            save(d)
+    except Exception as ex:
+        print("day msg rt:", ex, flush=True)
+    return out
+def _bb_apm_last(shop, b):
+    try:
+        k, rt = _bb_msg_key(b), str(b.get("rt") or "")
+        for x in reversed(shop.get("msgs") or []):
+            if isinstance(x, dict) and x.get("via") == "app" and x.get("text") and (x.get("rt") == rt if x.get("rt") else (k and x.get("k") == k)):
+                return x
+    except Exception:
+        pass
+    return None
+def _bb_dm_pushon(shop, b):
+    k = _bb_msg_key(b)
+    for lst in ("bookings", "cancelled", "noshows"):
+        for x in shop.get(lst) or []:
+            if isinstance(x, dict) and x.get("push") and k and _bb_msg_key(x) == k:
+                return True
+    return False
+def _bb_dm_line(sid, shop, b):
+    rt = str(b.get("rt") or "")
+    ms = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("via") == "app" and x.get("text") and x.get("rt") == rt]
+    on = _bb_dm_pushon(shop, b)
+    h = ("<div class='bbdaymsg'><span class='bbdaybell' style='display:inline-block;margin:6px 6px 0 0;padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;"
+         + ("background:#e3f7ea;color:#137a3f'>&#128276; Notifications on" if on else "background:#eceff3;color:#667'>&#128277; Notifications off") + "</span>")
+    if ms:
+        x = ms[-1]
+        raw = str(x.get("text", ""))
+        t = str(escape(raw[:90])) + ("&hellip;" if len(raw) > 90 else "")
+        h += ("<a class='bbdaymsgln' href='/msg/" + sid + "?rt=" + str(escape(rt)) + "' style='display:block;margin-top:6px;background:#fff6d6;border:1px solid #f0d36b;"
+              "color:#5a4500;border-radius:10px;padding:7px 10px;text-decoration:none;font-size:14px'>&#128172; <b>" + str(len(ms)) + (" message" if len(ms) == 1 else " messages")
+              + "</b> &middot; last " + str(escape(_bb_hub_when(x.get("at") or ""))) + ": " + t + "</a>")
+    return h + "</div>"
+@app.after_request
+def _bb_dm_after(resp):
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200 or len(pp) != 3 or pp[0] != "cday":
+            return resp
+        sid = pp[1]
+        if not _bb_sess.get("own_" + sid):
+            return resp
+        h = resp.get_data(as_text=True)
+        if "class='bbdaymsg'" in h:
+            return resp
+        shop = load().get(sid) or {}
+        byrt = {str(x.get("rt")): x for x in shop.get("bookings") or [] if isinstance(x, dict) and x.get("rt")}
+        tag = "href='/msg/" + sid + "?rt="
+        out, pos = "", 0
+        while True:
+            i = h.find(tag, pos)
+            if i < 0:
+                break
+            j, z = h.find("'", i + len(tag)), h.find("</a>", i)
+            if j < 0 or z < 0:
+                break
+            b = byrt.get(_bb_dm_html.unescape(h[i + len(tag):j]))
+            out += h[pos:z + 4]
+            pos = z + 4
+            if b:
+                out += _bb_dm_line(sid, shop, b)
+        resp.set_data(out + h[pos:])
+    except Exception as ex:
+        print("day msg lines:", ex, flush=True)
+    return resp
+# ===== END BB DAY MSG LINES =====
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
