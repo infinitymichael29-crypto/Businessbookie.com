@@ -5869,12 +5869,14 @@ def bb_cday(sid, ds):
             c += "<br>&#128663; " + e(x["caddr"])
         if attn and x.get("rt"):
             c += ("<form method='post' action='/ns/" + sid + "/" + rt + "' style='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap'>"
-                  "<button name='a' value='showed' style='width:auto;background:#1faa59'>&#9989; Showed up</button>"
+                  "<input type='password' name='pw' placeholder='&#128274; Your password to confirm' required autocomplete='current-password' style='flex-basis:100%;margin:0'>""<input type='hidden' name='back' value='/cday/" + sid + "/" + ds + "'>""<button name='a' value='showed' style='width:auto;background:#1faa59'>&#9989; Showed up</button>"
                   "<button name='a' value='noshow' style='width:auto;background:#e23b3b' onclick=\"return confirm('Mark as no-show? They will NOT get a refund.')\">&#10060; No-show</button></form>")
         acts = ""
         if x.get("phone"):
             acts += "<a href='tel:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128222; Call</a>"
             acts += "<a href='sms:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128172; Text</a>"
+        if x.get("rt"):
+            acts += "<a href='/msg/" + sid + "?rt=" + rt + "' style='" + btn + "background:#1a6dff;color:#fff'>&#128172; Message</a>"
         if x.get("rt") and not x.get("done"):
             acts += "<a href='/ns/" + sid + "/" + rt + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128260; Reschedule</a>"
         if x.get("pi") and float(x.get("fee") or 0) > 0:
@@ -6210,6 +6212,173 @@ def save(d):
             print("db hiccup on save, retrying", i + 1)
             _bb_rt_t.sleep(0.2 * (i + 1))
 # ===== END BB DB RETRY =====
+
+
+# ===== BB NOSHOW PASSWORD =====
+def _bb_nspw_back(sid):
+    bk = request.form.get("back", "")
+    return bk if bk.startswith("/cday/" + sid + "/") and "//" not in bk[1:] and len(bk) < 80 else "/d/" + sid
+def _bb_nspw_before():
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method != "POST" or len(pp) != 3 or pp[0] != "ns" or request.form.get("a") not in ("showed", "noshow"):
+            return None
+        sid = pp[1]
+        shop = load().get(sid)
+        if not isinstance(shop, dict) or not _bb_sess.get("own_" + sid):
+            return None
+        if not _bb_rf_pw_ok(shop, request.form.get("pw", "")):
+            return (S + "<h1>&#128274; Wrong password</h1><p>Nothing was changed. Type your password, then tap Showed up or No-show again.</p>"
+                    + _bb_rf_btn(_bb_nspw_back(sid), "&#8592; Try again", solid=True))
+    except Exception as ex:
+        print("noshow password:", ex)
+    return None
+app.before_request_funcs.setdefault(None, []).insert(0, _bb_nspw_before)
+@app.after_request
+def _bb_nspw_after(resp):
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method == "POST" and len(pp) == 3 and pp[0] == "ns" and 300 <= resp.status_code < 400 and request.form.get("a") in ("showed", "noshow"):
+            resp.headers["Location"] = _bb_nspw_back(pp[1])
+    except Exception:
+        pass
+    return resp
+# ===== END BB NOSHOW PASSWORD =====
+
+
+# ===== BB MESSAGES =====
+import json as _bb_mg_json, urllib.request as _bb_mg_url
+_BB_MSG_QUICK = ["Hi! I'm running about 10 minutes late. Sorry about that!", "Hi! Could we move your appointment? Reply with a time that works for you.",
+                 "Thanks for coming in today! See you next time.", "Reminder: see you tomorrow for your appointment."]
+def _bb_msg_key(b):
+    return (b.get("email") or b.get("phone") or b.get("name") or "").strip().lower()
+def _bb_msg_find(shop, rt=None, k=None):
+    best = None
+    for lst in ("bookings", "cancelled", "noshows"):
+        for x in shop.get(lst) or []:
+            if not isinstance(x, dict):
+                continue
+            if (rt and str(x.get("rt")) == rt) or (k and _bb_msg_key(x) == k):
+                if best is None or (x.get("when") or "") > (best.get("when") or ""):
+                    best = x
+    return best
+def _bb_msg_mail(payload):
+    rk = os.environ.get("RESEND_API_KEY")
+    if not rk:
+        raise Exception("email is not set up")
+    rq = _bb_mg_url.Request("https://api.resend.com/emails", data=_bb_mg_json.dumps(payload).encode(),
+                            headers={"Authorization": "Bearer " + rk, "Content-Type": "application/json", "User-Agent": "BusinessBookie/1.0"})
+    _bb_mg_url.urlopen(rq, timeout=20).read()
+def _bb_msg_send(shop, to, text):
+    nm = (shop.get("name") or "Business").replace("<", "").replace(">", "").replace('"', "")
+    body = text + "\n\n- " + nm + "\n(Reply to this email to answer " + nm + " directly.)"
+    payload = {"from": nm + " via Business-Bookie <bookings@business-bookie.com>", "to": [to], "subject": "Message from " + nm, "text": body}
+    if shop.get("email"):
+        payload["reply_to"] = shop["email"]
+    _bb_msg_mail(payload)
+def _bb_msg_log(shop, k, via, to, text):
+    shop.setdefault("msgs", []).append({"k": k, "via": via, "to": to, "text": text[:1000], "at": (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")})
+    shop["msgs"] = shop["msgs"][-500:]
+def _bb_msg_hist(shop, k, limit=20):
+    e = lambda x: str(escape(x))
+    rows = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("k") == k][::-1][:limit]
+    if not rows:
+        return "<p style='color:#556;margin:6px 0'>No messages sent yet.</p>"
+    out = ""
+    for x in rows:
+        icon = "&#9993;&#65039; Email" if x.get("via") == "email" else "&#128241; Text from your phone"
+        out += ("<div style='border-left:4px solid #1a6dff;background:#eef3ff;border-radius:8px;padding:8px 10px;margin:6px 0;text-align:left;font-size:14px'>"
+                "<div style='color:#556;font-size:12px'>" + e(_bb_hub_when(x.get("at") or "")) + " &middot; " + icon + "</div>" + e(x.get("text", "")) + "</div>")
+    return out
+@app.route("/msg/<sid>", methods=["GET", "POST"])
+def bb_msg(sid):
+    d = load()
+    shop = d.get(sid)
+    if not isinstance(shop, dict):
+        return S + "<h1>Business not found</h1>", 404
+    if not _bb_sess.get("own_" + sid):
+        return _bb_rd("/d/" + sid)
+    e = lambda x: str(escape(x))
+    rt, k = request.values.get("rt"), (request.values.get("k") or "").strip().lower()
+    b = _bb_msg_find(shop, rt=rt, k=k or None)
+    if b is None:
+        return S + "<h1>Customer not found</h1>" + _bb_rf_btn("/d/" + sid, "&#8592; Back to dashboard"), 404
+    k = _bb_msg_key(b)
+    em, ph = (b.get("email") or "").strip(), (b.get("phone") or "").strip()
+    text = (request.form.get("text") or "").strip()
+    msg = ""
+    if request.method == "POST":
+        act = request.form.get("act")
+        if act == "logtext" and text:
+            _bb_msg_log(shop, k, "phone", ph, text)
+            save(d)
+            return "ok"
+        if act == "email":
+            if not text:
+                msg = "<p style='color:#e23b3b'><b>Type a message first.</b></p>"
+            elif not em:
+                msg = "<p style='color:#e23b3b'><b>This customer has no email. Use Text from my phone.</b></p>"
+            else:
+                try:
+                    _bb_msg_send(shop, em, text)
+                    _bb_msg_log(shop, k, "email", em, text)
+                    save(d)
+                    msg = "<p style='color:#1faa59'><b>&#9989; Sent to " + e(em) + "</b></p>"
+                    text = ""
+                except Exception as ex:
+                    msg = "<p style='color:#e23b3b'><b>Couldn't send:</b> " + e(str(ex)) + "</p>"
+    chips = "".join("<button type='button' onclick=\"document.getElementById('bbmsgt').value=this.dataset.t\" data-t='" + e(q) + "' "
+                    "style='width:auto;display:inline-block;margin:3px;padding:7px 10px;font-size:13px;background:#eef3ff;color:#1a6dff;border:1px solid #c9d8ff'>" + e(q[:34]) + "&hellip;</button>" for q in _BB_MSG_QUICK)
+    js = ("<script>function bbsms(){var t=document.getElementById('bbmsgt').value;if(!t){alert('Type a message first');return false}"
+          "var f=new FormData();f.append('act','logtext');f.append('text',t);f.append('rt','" + e(b.get("rt", "")) + "');"
+          "try{navigator.sendBeacon(location.pathname+location.search,f)}catch(x){}"
+          "location.href='sms:" + e(ph) + "?&body='+encodeURIComponent(t);return false}</script>")
+    form = ("<form method='post'><input type='hidden' name='rt' value='" + e(b.get("rt", "")) + "'><p><b>Quick messages</b> (tap one, then edit)</p>" + chips
+            + "<textarea id='bbmsgt' name='text' rows='4' placeholder='Type your message'>" + e(text) + "</textarea>"
+            + ("<button name='act' value='email'>&#9993;&#65039; Send by email</button>" if em else "")
+            + ("<button type='button' onclick='return bbsms()' style='background:#1faa59'>&#128241; Text from my phone</button>" if ph else "")
+            + "</form><p style='font-size:12px;color:#556'>Keep messages about appointments. Promotional messages need the customer's separate permission.</p>")
+    head = ("<h1>&#128172; Message " + e(b.get("name", "")) + "</h1><div class='card' style='text-align:left'>" + (("&#9993;&#65039; " + e(em) + "<br>") if em else "")
+            + (("&#128222; " + e(ph)) if ph else "") + "</div>")
+    return (S + head + msg + form + js + "<h3>&#128340; Messages sent</h3><div class='card'>" + _bb_msg_hist(shop, k) + "</div>"
+            + _bb_rf_btn("/clients/" + sid, "&#128101; Clients") + _bb_rf_btn("/d/" + sid, "&#8592; Back to dashboard"))
+@app.after_request
+def _bb_msg_after(resp):
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200 or len(pp) != 2 or pp[0] != "clients":
+            return resp
+        sid = pp[1]
+        if not _bb_sess.get("own_" + sid):
+            return resp
+        h = resp.get_data(as_text=True)
+        if "class='bbmsgbtn'" in h:
+            return resp
+        shop = load().get(sid) or {}
+        tag = "<input type='hidden' name='a' value='note'><input type='hidden' name='k' value='"
+        out, pos = "", 0
+        while True:
+            i = h.find(tag, pos)
+            if i < 0:
+                break
+            j = h.find("'", i + len(tag))
+            f = h.rfind("<form", 0, i)
+            if j < 0 or f < pos:
+                out += h[pos:i + len(tag)]
+                pos = i + len(tag)
+                continue
+            kk = str(__import__("html").unescape(h[i + len(tag):j]))
+            n = len([x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("k") == kk])
+            btn = ("<a class='bbmsgbtn' href='/msg/" + sid + "?k=" + __import__("urllib.parse", fromlist=["quote"]).quote(kk) + "' style='display:inline-block;margin:8px 0 0;padding:8px 12px;"
+                   "border-radius:10px;background:#1a6dff;color:#fff;text-decoration:none;font-weight:700;font-size:14px'>&#128172; Message"
+                   + (" (" + str(n) + " sent)" if n else "") + "</a>")
+            out += h[pos:f] + btn + h[f:j]
+            pos = j
+        resp.set_data(out + h[pos:])
+    except Exception as ex:
+        print("messages:", ex)
+    return resp
+# ===== END BB MESSAGES =====
 
 import os
 if __name__ == "__main__":
