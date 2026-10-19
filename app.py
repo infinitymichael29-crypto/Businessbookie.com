@@ -6686,6 +6686,136 @@ def _bb_dm_after(resp):
     return resp
 # ===== END BB DAY MSG LINES =====
 
+
+# ===== BB CUSTOMER REPLY =====
+def _bb_cr_now():
+    return datetime.utcnow() - timedelta(hours=10)
+def _bb_cr_thread(shop, rt):
+    e = lambda x: str(escape(x))
+    ms = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("rt") == rt and x.get("text") and x.get("via") in ("app", "customer")][-10:]
+    h = ""
+    for x in ms:
+        me = x.get("via") == "customer"
+        h += ("<div style='margin:6px 0;display:flex;justify-content:" + ("flex-end" if me else "flex-start") + "'><div style='max-width:80%;padding:8px 11px;border-radius:12px;"
+              + ("background:#efe6ff;color:#3b1d7a" if me else "background:#fff6d6;color:#5a4500") + "'><div style='font-size:12px;opacity:.75'>"
+              + ("You" if me else e(shop.get("name", ""))) + " &middot; " + e(_bb_hub_when(x.get("at") or "")) + "</div>" + e(x.get("text", "")) + "</div></div>")
+    return h
+def _bb_cr_box(sid, rt, shop, sent):
+    note = ""
+    if sent == "1":
+        note = "<p style='color:#1faa59;font-weight:700'>&#9989; Sent to " + str(escape(shop.get("name", ""))) + "</p>"
+    elif sent == "limit":
+        note = "<p style='color:#e23b3b;font-weight:700'>You've sent a lot of messages. Please wait a bit, or call the shop.</p>"
+    return ("<div class='card' id='bbcmsg' style='text-align:left'><b>&#128172; Messages with " + str(escape(shop.get("name", ""))) + "</b>" + _bb_cr_thread(shop, rt) + note
+            + "<form method='post' action='/creply/" + sid + "/" + str(escape(rt)) + "'><textarea name='text' maxlength='500' rows='3' required placeholder='Write to the shop...' "
+            "style='width:100%;box-sizing:border-box;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #d7e0f0;font-size:16px'></textarea>"
+            "<button>&#128172; Message the shop</button></form></div>")
+@app.route("/creply/<sid>/<rt>", methods=["POST"])
+def bb_creply(sid, rt):
+    d = load()
+    shop = d.get(sid)
+    b = _bb_msg_find(shop, rt=rt) if isinstance(shop, dict) else None
+    if not b:
+        return S + "<h1>Booking not found</h1>", 404
+    back = "/m/" + sid + "/" + rt
+    text = (request.form.get("text") or "").strip()[:500]
+    if not text:
+        return _bb_rd(back + "#bbcmsg")
+    cut = (_bb_cr_now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
+    if len([x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("via") == "customer" and x.get("rt") == rt and (x.get("at") or "") >= cut]) >= 5:
+        return _bb_rd(back + "?sent=limit#bbcmsg")
+    shop.setdefault("msgs", []).append({"k": _bb_msg_key(b), "via": "customer", "rt": rt, "to": shop.get("email") or "", "text": text,
+                                        "at": _bb_cr_now().strftime("%Y-%m-%d %H:%M"), "new": True})
+    shop["msgs"] = shop["msgs"][-500:]
+    save(d)
+    who = b.get("name") or "A customer"
+    link = request.host_url + "msg/" + sid + "?rt=" + rt
+    try:
+        if shop.get("push"):
+            _bb_msg_bg(_bb_push_send, list(shop["push"]), "Message from " + who, text[:180], link)
+    except Exception as ex:
+        print("reply push:", ex, flush=True)
+    try:
+        if shop.get("email"):
+            pl = {"from": "Business-Bookie <bookings@business-bookie.com>", "to": [shop["email"]], "subject": "New message from " + who,
+                  "text": who + " wrote:\n\n" + text + "\n\nReply here: " + link}
+            if (b.get("email") or "").strip():
+                pl["reply_to"] = b["email"].strip()
+            _bb_msg_bg(_bb_msg_mail, pl)
+    except Exception as ex:
+        print("reply email:", ex, flush=True)
+    return _bb_rd(back + "?sent=1#bbcmsg")
+def _bb_cr_after(resp):
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        if len(pp) == 3 and pp[0] == "m":
+            h = resp.get_data(as_text=True)
+            if "id='bbcmsg'" in h:
+                return resp
+            shop = load().get(pp[1])
+            if not isinstance(shop, dict) or not _bb_msg_find(shop, rt=pp[2]):
+                return resp
+            box = _bb_cr_box(pp[1], pp[2], shop, request.args.get("sent") or "")
+            i = h.rfind("</body>")
+            resp.set_data(h[:i] + box + h[i:] if i >= 0 else h + box)
+        elif len(pp) == 2 and pp[0] == "msg" and _bb_sess.get("own_" + pp[1]):
+            d = load()
+            shop = d.get(pp[1]) or {}
+            rt, k = request.args.get("rt"), request.args.get("k")
+            b = _bb_msg_find(shop, rt=rt) if rt else None
+            kk = _bb_msg_key(b) if b else (k or "")
+            ch = False
+            for x in shop.get("msgs") or []:
+                if isinstance(x, dict) and x.get("via") == "customer" and x.get("new") and kk and x.get("k") == kk:
+                    x["new"] = False
+                    ch = True
+            if ch:
+                save(d)
+    except Exception as ex:
+        print("customer reply page:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_cr_after)
+_bb_cr_via_prev = _bb_msg_via
+def _bb_msg_via(x):
+    if x.get("via") == "customer":
+        return "<span style='color:#6b3fd1;font-weight:700'>&#128100; From the customer</span>"
+    return _bb_cr_via_prev(x)
+_bb_cr_line_prev = _bb_dm_line
+def _bb_dm_line(sid, shop, b):
+    h = _bb_cr_line_prev(sid, shop, b)
+    rt = str(b.get("rt") or "")
+    nw = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("via") == "customer" and x.get("rt") == rt and x.get("new")]
+    if nw and h.endswith("</div>"):
+        raw = str(nw[-1].get("text", ""))
+        h = h[:-6] + ("<a class='bbdayreply' href='/msg/" + sid + "?rt=" + str(escape(rt)) + "' style='display:block;margin-top:6px;background:#efe6ff;border:2px solid #6b3fd1;"
+                      "color:#3b1d7a;border-radius:10px;padding:7px 10px;text-decoration:none;font-size:14px'>&#128233; <b>New reply" + (" (" + str(len(nw)) + ")" if len(nw) > 1 else "")
+                      + ":</b> " + str(escape(raw[:90])) + ("&hellip;" if len(raw) > 90 else "") + "</a></div>")
+    return h
+# ===== END BB CUSTOMER REPLY =====
+# ===== BB LOGIN APPTS =====
+_bb_la_get_prev = _bb_ap_get
+def _bb_ap_get():
+    out = _bb_la_get_prev()
+    try:
+        own = _bb_oh_owned()
+        if not own:
+            return out
+        d = load()
+        ems = {(d[x].get("email") or "").strip().lower() for x in own if isinstance(d.get(x), dict) and d[x].get("live", True)} - {""}
+        for sid, shop in d.items():
+            if not ems or not isinstance(shop, dict):
+                continue
+            for b in shop.get("bookings") or []:
+                if isinstance(b, dict) and b.get("rt") and (b.get("email") or "").strip().lower() in ems and (sid, str(b["rt"])) not in out:
+                    out.append((sid, str(b["rt"])))
+                    break
+    except Exception as ex:
+        print("login appts:", ex, flush=True)
+    return out
+# ===== END BB LOGIN APPTS =====
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
