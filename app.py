@@ -247,8 +247,8 @@ def dash(sid):
     toprows = ""
     if _due: toprows += ""
     rows += ""
-    rows += _bb_receipts(shop, sid, _dn)
-    rows += _sec("No-shows", _ns, "None. Nice!", clr="#e23b3b")
+    rows += ("<details id='bbpastfold' style='margin:12px 0'><summary style='font-weight:800;color:#556;cursor:pointer;padding:10px 0'>&#128193; Past bookings ("
+             + str(len(_dn) + len(_ns)) + ") &middot; tap to open</summary>" + _bb_receipts(shop, sid, _dn) + _sec("No-shows", _ns, "None. Nice!", clr="#e23b3b") + "</details>")
     acct = shop.get("acct", "")
     pq = "?pw=" + quote(pw)
     cb = "display:block;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700;margin-top:10px"
@@ -878,6 +878,10 @@ def _bb_delete(sid):
             if b.get("email"):
                 notify("Your booking at " + name + " was cancelled", "Sorry! " + name + " has closed on Business-Bookie, so your " + b.get("service", "") + " on " + b.get("when", "") + " is cancelled." + (" You will be refunded. It can take 5 to 10 business days to show on your card." if b.get("pi") else ""), b["email"])
         notify("Business deleted: " + name, "Your business was removed from Business-Bookie. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.", shop.get("email") or GMAIL)
+        try:
+            _bb_closed_add(sid, name, up)
+        except Exception as ex:
+            print("closed notice:", ex, flush=True)
         del d[sid]
         save(d)
         _bb_sess.pop("own_" + sid, None)
@@ -4979,12 +4983,16 @@ def _bb_ap_card_rows(rows, limit=None):
 
 @app.route("/appointments")
 def bb_appointments():
-    rows = _bb_ap_list(_bb_ap_get())
-    h = "<h1>My appointments</h1>"
+    pairs = _bb_ap_get()
+    rows = _bb_ap_list(pairs)
+    past = _bb_ap_past(pairs)
+    h = "<h1>My appointments</h1>" + _bb_inbox_buttons()
     if rows:
-        h += "<p>Bookings made on this phone. Tap one to see directions, reschedule or cancel.</p>" + _bb_ap_card(rows)
+        h += "<p>Your upcoming bookings. Tap one to see directions, reschedule, cancel or message the shop.</p>" + _bb_ap_card(rows)
     else:
         h += "<p>No upcoming appointments saved on this phone yet. After you book, they show up here automatically.</p>"
+    if past:
+        h += _bb_ap_past_fold(past)
     h += ("<a href='/find' style='display:block;text-align:center;padding:13px;margin:12px 0;border:2px solid #1a6dff;color:#1a6dff;"
           "border-radius:12px;text-decoration:none;font-weight:800'>&#10133; Book an appointment</a>"
           "<p style='font-size:13px;color:#556'>Shared phone? <a href='/appointments/forget'>Forget my appointments on this phone</a></p>")
@@ -5898,57 +5906,280 @@ def _bb_cu_booking_items():
             if w <= soon:
                 add("r", "yellow", "&#9200;", "Coming up soon")
     return out
-def _bb_cu_seen():
-    return set(x for x in (request.cookies.get("bbupseen", "") or "").split(",") if x)
-def _bb_cu_box(items, seen):
+# ----- Inbox: Notifications (automatic updates) and Messages (owner <-> customer), kept separate -----
+# Read / cleared state is remembered per phone in cookies, so customers never need to log in.
+_BB_IB_DAYS_KEEP = 2      # a booking's notifications disappear 2 days after the appointment
+_BB_IB_CLOSED_DAYS = 14   # a "business closed" notice shows for 14 days, then disappears
+try:
+    _BB_JA.update({"Notifications": "お知らせ", "Messages": "メッセージ", "Clear all": "すべて消去", "You're all caught up.": "新しいお知らせはありません。",
+                   "No messages yet.": "メッセージはまだありません。", "Past conversations": "過去のメッセージ"})
+    _BB_JA_PATHS = _BB_JA_PATHS + ("/notifications", "/messages")
+except Exception:
+    pass
+def _bb_ib_now():
+    return datetime.utcnow() - timedelta(hours=10)
+def _bb_ck(name):
+    return [x for x in (request.cookies.get(name) or "").split(",") if x]
+def _bb_ck_put(resp, name, vals):
+    vals = list(dict.fromkeys(vals))[-150:]
+    resp.set_cookie(name, ",".join(vals), max_age=2 * 365 * 86400, samesite="Lax", httponly=True)
+# --- business-closed notices (kept outside the business data, which is deleted) ---
+def _bb_closed_path():
+    return os.path.join(os.path.dirname(os.path.abspath(DB)), "closed.json")
+def _bb_closed_all():
+    try:
+        if os.environ.get("DATABASE_URL"):
+            c = _bb_db()
+            try:
+                c.run("CREATE TABLE IF NOT EXISTS bb_closed (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+                r = c.run("SELECT v FROM bb_closed WHERE k = :k", k=_bb_dbkey())
+            finally:
+                c.close()
+            return json.loads(r[0][0]) if r else {}
+        p = _bb_closed_path()
+        return json.load(open(p)) if os.path.exists(p) else {}
+    except Exception as ex:
+        print("closed read:", ex, flush=True)
+        return {}
+def _bb_closed_add(sid, name, upcoming):
+    allc = _bb_closed_all()
+    cut = (_bb_ib_now() - timedelta(days=_BB_IB_CLOSED_DAYS)).strftime("%Y-%m-%d %H:%M")
+    allc = {k: v for k, v in allc.items() if (v.get("at") or "") >= cut}
+    allc[sid] = {"name": name, "at": _bb_ib_now().strftime("%Y-%m-%d %H:%M"),
+                 "rts": {str(b.get("rt")): {"when": b.get("when") or "", "paid": bool(b.get("pi"))} for b in upcoming if isinstance(b, dict) and b.get("rt")}}
+    v = json.dumps(allc)
+    if os.environ.get("DATABASE_URL"):
+        c = _bb_db()
+        try:
+            c.run("CREATE TABLE IF NOT EXISTS bb_closed (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+            c.run("INSERT INTO bb_closed (k, v) VALUES (:k, :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", k=_bb_dbkey(), v=v)
+        finally:
+            c.close()
+    else:
+        open(_bb_closed_path(), "w").write(v)
+def _bb_closed_items():
+    out = []
+    try:
+        allc = _bb_closed_all()
+        if not allc:
+            return out
+        d = load()
+        cut = (_bb_ib_now() - timedelta(days=_BB_IB_CLOSED_DAYS)).strftime("%Y-%m-%d %H:%M")
+        for sid, rt in _bb_ap_cookie_pairs():
+            c = allc.get(sid)
+            if sid in d or not c or (c.get("at") or "") < cut or rt not in (c.get("rts") or {}):
+                continue
+            info = c["rts"][rt]
+            sub = "Your appointment" + ((" on " + str(escape(_bb_hub_when(info.get("when") or "")))) if info.get("when") else "") + " is cancelled."
+            if info.get("paid"):
+                sub += " Your refund is on the way."
+            out.append(("closed:" + sid + ":" + rt, "grey", "&#128683;", str(escape(c.get("name") or "A business")) + " has closed", sub, "", "/find", c.get("at") or ""))
+    except Exception as ex:
+        print("closed items:", ex, flush=True)
+    return out
+# --- past bookings (folded away on My appointments) ---
+def _bb_ap_past(pairs):
+    d = load()
+    now = _bb_ib_now().strftime("%Y-%m-%d %H:%M")
+    old = (_bb_ib_now() - timedelta(days=60)).strftime("%Y-%m-%d")
+    out, seen = [], set()
+    for sid, rt in pairs:
+        shop = d.get(sid)
+        if not isinstance(shop, dict) or (sid, rt) in seen:
+            continue
+        for lst in ("bookings", "cancelled", "noshows"):
+            for b in shop.get(lst) or []:
+                if not isinstance(b, dict) or str(b.get("rt")) != rt:
+                    continue
+                w = b.get("when") or ""
+                if lst == "bookings" and not b.get("done") and w >= now:
+                    continue
+                if w[:10] < old:
+                    continue
+                seen.add((sid, rt))
+                out.append((w, sid, shop, b, "No-show" if lst == "noshows" else "Cancelled" if lst == "cancelled" else "Done" if b.get("done") else "Past"))
+    out.sort(key=lambda r: r[0], reverse=True)
+    return out[:15]
+def _bb_ap_past_fold(past):
+    e = lambda v: str(escape(str(v)))
+    rows = "".join("<div style='padding:8px 2px;border-top:1px solid #e3e8f2;color:#556;font-size:15px'><b style='color:#334'>" + e(b.get("service", "")) + "</b> &middot; "
+                   + e(shop.get("name", "")) + "<br>" + e(_bb_hub_when(w)) + " &middot; <span>" + st + "</span></div>" for w, sid, shop, b, st in past)
+    return ("<details id='bbappast' style='margin:12px 0'><summary style='font-weight:800;color:#556;cursor:pointer;padding:8px 0'>&#128193; Past ("
+            + str(len(past)) + ")</summary>" + rows + "</details>")
+# --- notifications ---
+def _bb_nt_state():
+    cut = (_bb_ib_now() - timedelta(days=_BB_IB_DAYS_KEEP)).strftime("%Y-%m-%d %H:%M")
+    gone = set(_bb_ck("bbntgone"))
+    items = [i for i in _bb_cu_items() if i[0] not in gone and (i[0].startswith("closed:") or (i[7] or "") >= cut)]
+    items.sort(key=lambda x: x[7] or "", reverse=True)
+    first = "bbntread" not in request.cookies
+    read = set(_bb_ck("bbntread")) | ({i[0] for i in items} if first else set())
+    return items, read, gone, first
+def _bb_nt_unread():
+    items, read, gone, first = _bb_nt_state()
+    return len([1 for i in items if i[0] not in read])
+# --- messages: one conversation per booking ---
+def _bb_mg_read():
+    out = {}
+    for x in _bb_ck("bbmgread"):
+        rt, _, n = x.rpartition(".")
+        if rt and n.isdigit():
+            out[rt] = int(n)
+    return out
+def _bb_mg_threads():
+    pairs = _bb_ap_get()
+    out = []
+    groups = [("now", [(w, sid, shop, b) for w, sid, shop, b in _bb_ap_list(pairs)]), ("past", [(w, sid, shop, b) for w, sid, shop, b, st in _bb_ap_past(pairs)])]
+    seen = set()
+    for grp, rows in groups:
+        for w, sid, shop, b in rows:
+            rt = str(b.get("rt") or "")
+            if (sid, rt) in seen:
+                continue
+            seen.add((sid, rt))
+            ms = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("rt") == rt and x.get("text") and x.get("via") in ("app", "customer")]
+            if ms:
+                out.append({"grp": grp, "sid": sid, "rt": rt, "shop": shop, "b": b, "last": ms[-1], "napp": len([x for x in ms if x.get("via") == "app"])})
+    return out
+def _bb_mg_unread_map(threads):
+    first = "bbmgread" not in request.cookies
+    rd = _bb_mg_read()
+    return {t["rt"]: (0 if first else max(0, t["napp"] - rd.get(t["rt"], 0))) for t in threads}
+def _bb_mg_unread():
+    th = [t for t in _bb_mg_threads() if t["grp"] == "now"]
+    return sum(_bb_mg_unread_map(th).values())
+def _bb_ib_pill(n):
+    return ("<span class='bbibn' style='display:inline-block;min-width:20px;text-align:center;background:#e23b3b;color:#fff;border-radius:999px;font-size:12px;"
+            "font-weight:800;padding:1px 6px;margin-left:6px'>" + str(min(n, 99)) + "</span>") if n else ""
+def _bb_inbox_buttons():
+    b = "flex:1;text-align:center;padding:12px 6px;border-radius:12px;text-decoration:none;font-weight:800;border:2px solid #1a6dff;color:#1a6dff;background:#fff"
+    return ("<div id='bbinbox' style='display:flex;gap:10px;margin:10px 0 14px'>"
+            "<a href='/notifications' style='" + b + "'>&#128276; <span>Notifications</span>" + _bb_ib_pill(_bb_nt_unread()) + "</a>"
+            "<a href='/messages' style='" + b + "'>&#128172; <span>Messages</span>" + _bb_ib_pill(_bb_mg_unread()) + "</a></div>")
+def _bb_ib_back():
+    return "<p><a href='/appointments' style='font-weight:700'>&#8592; My appointments</a></p>"
+@app.route("/notifications")
+def bb_notifications():
+    from flask import make_response
+    items, read, gone, first = _bb_nt_state()
+    h = (_bb_ib_back() + "<div style='display:flex;align-items:center;justify-content:space-between'><h1 style='margin:6px 0'>&#128276; <span>Notifications</span></h1>"
+         + ("<a href='/inbox/clear' style='font-weight:700'><span>Clear all</span></a>" if items else "") + "</div>")
     if not items:
-        return ""
-    rows = ""
-    for k, col, icon, lab, sub, when, link, w in sorted(items, key=lambda x: x[7], reverse=True)[:12]:
+        h += "<p style='color:#556'><span>You're all caught up.</span></p>"
+    for k, col, icon, lab, sub, when, link, w in items[:40]:
         fg, bg = _BB_CU_STY[col]
-        new = k not in seen
-        rows += ("<a href='" + link + "' style='display:flex;gap:10px;align-items:flex-start;padding:9px 10px;margin:6px 0;border-left:5px solid " + fg + ";background:" + bg
-                 + ";border-radius:10px;text-decoration:none;color:#0b1f4d;text-align:left'><span style='font-size:20px'>" + icon + "</span><span style='flex:1'><b>" + lab + "</b>"
-                 + (" <span style='background:#0b1f4d;color:#fff;border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800'>NEW</span>" if new else "")
-                 + "<br><span style='font-size:14px;color:#445'>" + sub + "<br>" + when + "</span></span></a>")
-    return "<div id='bbupd' class='card' style='text-align:left'><b style='font-size:18px'>&#128276; <span>Updates</span></b>" + rows + "</div>"
+        new = k not in read
+        h += ("<div class='bbnt' style='display:flex;align-items:stretch;margin:8px 0;border-left:5px solid " + fg + ";background:" + (bg if new else "#f6f7f9")
+              + ";border-radius:10px;" + ("" if new else "opacity:.7;") + "'>"
+              "<a href='/inbox/open?k=" + _bb_oh_q(k) + "' style='flex:1;display:flex;gap:10px;padding:10px;text-decoration:none;color:#0b1f4d;text-align:left'>"
+              "<span style='font-size:20px'>" + icon + "</span><span>" + ("<b>" + lab + "</b>" if new else lab)
+              + (" <span class='bbntdot' style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#1a6dff;margin-left:4px'></span>" if new else "")
+              + "<br><span style='font-size:14px;color:#445'>" + sub + ("<br>" + when if when else "") + "</span></span></a>"
+              "<a href='/inbox/x?k=" + _bb_oh_q(k) + "' title='Clear' style='padding:10px 12px;color:#8a94a6;text-decoration:none;font-size:18px'>&#10005;</a></div>")
+    r = make_response(S + h)
+    if first:
+        _bb_ck_put(r, "bbntread", list(read))
+    return r
+@app.route("/messages")
+def bb_messages_inbox():
+    from flask import make_response
+    e = lambda v: str(escape(str(v)))
+    th = _bb_mg_threads()
+    un = _bb_mg_unread_map(th)
+    def row(t):
+        n = un.get(t["rt"], 0)
+        x = t["last"]
+        who = "You: " if x.get("via") == "customer" else ""
+        raw = str(x.get("text", ""))
+        prev = e(raw[:80]) + ("&hellip;" if len(raw) > 80 else "")
+        return ("<a class='bbmgt' href='/inbox/open?m=" + _bb_oh_q(t["sid"] + ":" + t["rt"]) + "' style='display:flex;gap:10px;align-items:center;padding:12px;margin:8px 0;border-radius:12px;"
+                "text-decoration:none;color:#0b1f4d;background:" + ("#eef3ff" if n else "#fff") + ";border:1px solid #d7e0f0;text-align:left'><span style='font-size:22px'>&#128172;</span>"
+                "<span style='flex:1'>" + ("<b>" if n else "") + e(t["shop"].get("name", "")) + ("</b>" if n else "") + _bb_ib_pill(n)
+                + "<br><span style='font-size:13px;color:#556'>" + e(t["b"].get("service", "")) + " &middot; " + e(_bb_hub_when(t["b"].get("when") or "")) + "</span>"
+                "<br><span style='font-size:14px;color:" + ("#0b1f4d;font-weight:700" if n else "#556") + "'>" + who + prev + "</span></span></a>")
+    now = [t for t in th if t["grp"] == "now"]
+    past = [t for t in th if t["grp"] == "past"]
+    h = _bb_ib_back() + "<h1>&#128172; <span>Messages</span></h1>"
+    h += "".join(row(t) for t in now) if now else "<p style='color:#556'><span>No messages yet.</span></p>"
+    if past:
+        h += ("<details style='margin:12px 0'><summary style='font-weight:800;color:#556;cursor:pointer;padding:8px 0'>&#128193; <span>Past conversations</span> ("
+              + str(len(past)) + ")</summary>" + "".join(row(t) for t in past) + "</details>")
+    r = make_response(S + h)
+    if "bbmgread" not in request.cookies:
+        _bb_ck_put(r, "bbmgread", [t["rt"] + "." + str(t["napp"]) for t in th])
+    return r
+@app.route("/inbox/open")
+def bb_inbox_open():
+    k, m = request.args.get("k") or "", request.args.get("m") or ""
+    if k:
+        items, read, gone, first = _bb_nt_state()
+        it = next((i for i in items if i[0] == k), None)
+        r = _bb_rd(it[6] if it else "/notifications")
+        _bb_ck_put(r, "bbntread", list(read) + [k])
+        return r
+    sid, _, rt = m.partition(":")
+    t = next((t for t in _bb_mg_threads() if t["sid"] == sid and t["rt"] == rt), None)
+    if not t:
+        return _bb_rd("/messages")
+    r = _bb_rd("/m/" + sid + "/" + rt + "#bbcmsg")
+    rd = _bb_mg_read()
+    rd[rt] = t["napp"]
+    _bb_ck_put(r, "bbmgread", [a + "." + str(b) for a, b in rd.items()])
+    return r
+@app.route("/inbox/x")
+def bb_inbox_x():
+    r = _bb_rd("/notifications")
+    _bb_ck_put(r, "bbntgone", _bb_ck("bbntgone") + [request.args.get("k") or ""])
+    return r
+@app.route("/inbox/clear")
+def bb_inbox_clear():
+    items, read, gone, first = _bb_nt_state()
+    r = _bb_rd("/notifications")
+    _bb_ck_put(r, "bbntgone", list(gone) + [i[0] for i in items])
+    return r
 @app.after_request
-def _bb_cu_after(resp):
+def _bb_ib_after(resp):
     try:
         if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
             return resp
         p = request.path
+        pp = p.strip("/").split("/")
+        if len(pp) == 3 and pp[0] == "m":
+            t = next((t for t in _bb_mg_threads() if t["sid"] == pp[1] and t["rt"] == pp[2]), None)
+            if t:
+                rd = _bb_mg_read()
+                if rd.get(t["rt"]) != t["napp"]:
+                    rd[t["rt"]] = t["napp"]
+                    _bb_ck_put(resp, "bbmgread", [a + "." + str(b) for a, b in rd.items()])
+            return resp
         if p not in ("/", "/find", "/appointments") or not _bb_ap_get():
             return resp
-        h = resp.get_data(as_text=True)
-        items = _bb_cu_items()
-        seen = _bb_cu_seen()
+        if "bbntread" not in request.cookies:
+            items, read, gone, first = _bb_nt_state()
+            _bb_ck_put(resp, "bbntread", list(read))
+        if "bbmgread" not in request.cookies:
+            _bb_ck_put(resp, "bbmgread", [t["rt"] + "." + str(t["napp"]) for t in _bb_mg_threads()])
         if p == "/appointments":
-            if "id='bbupd'" in h or not items:
-                return resp
-            box = _bb_cu_box(items, seen)
-            j = h.find("</h1>")
-            resp.set_data(h[:j + 5] + box + h[j + 5:] if j >= 0 else box + h)
-            resp.set_cookie("bbupseen", ",".join(sorted(set(k for k, *_ in items)))[:3500], max_age=2 * 365 * 86400, samesite="Lax", httponly=True)
             return resp
-        n = len([1 for k, *_ in items if k not in seen])
+        h = resp.get_data(as_text=True)
+        n = _bb_nt_unread() + _bb_mg_unread()
         if not n or "id='bbupbadge'" in h:
             return resp
-        badge = ("<span id='bbupbadge' style='display:inline-block;min-width:20px;text-align:center;background:#ffd400;color:#3a2f00;border-radius:999px;"
+        badge = ("<span id='bbupbadge' style='display:inline-block;min-width:20px;text-align:center;background:#e23b3b;color:#fff;border-radius:999px;"
                  "font-size:12px;font-weight:800;padding:1px 6px;margin-left:6px;vertical-align:middle'>" + str(min(n, 99)) + "</span>")
         k = h.find("<a href='/appointments'")
         if k >= 0:
-            e = h.find("</a>", k)
-            if e > k:
-                resp.set_data(h[:e] + badge + h[e:])
+            e2 = h.find("</a>", k)
+            if e2 > k:
+                resp.set_data(h[:e2] + badge + h[e2:])
                 return resp
-        bar = ("<a href='/appointments' style='display:block;background:#fff8d6;border:2px solid #ffd400;color:#3a2f00;border-radius:12px;padding:10px 12px;margin:10px 12px;"
-               "text-decoration:none;font-weight:700;text-align:left'>&#128276; <span>Updates</span> &middot; <span>My appointments</span>" + badge + " &rarr;</a>")
+        bar = ("<a href='/appointments' style='display:block;background:#fff;border:2px solid #e23b3b;color:#0b1f4d;border-radius:12px;padding:10px 12px;margin:10px 12px;"
+               "text-decoration:none;font-weight:700;text-align:left'>&#128276; <span>My appointments</span>" + badge + " &rarr;</a>")
         mb = re.search(r"<body[^>]*>", h)
         i = mb.end() if mb else 0
         resp.set_data(h[:i] + bar + h[i:])
     except Exception as ex:
-        print("customer updates:", ex)
+        print("inbox:", ex, flush=True)
     return resp
 # ===== END BB CUSTOMER UPDATES =====
 
@@ -6183,30 +6414,7 @@ def _bb_msg_deliver(d, sid, shop, b, k, em, text):
         out += "<p style='color:#e23b3b'>Couldn't send " + e("; ".join(problems)) + "</p>"
     return out
 def _bb_cu_items():
-    out = _bb_cu_booking_items()
-    try:
-        d = load()
-        done = set()
-        for sid, rt in _bb_ap_get():
-            shop = d.get(sid)
-            if not isinstance(shop, dict):
-                continue
-            b = _bb_msg_find(shop, rt=rt)
-            if not b:
-                continue
-            k = _bb_msg_key(b)
-            if (sid, k) in done:
-                continue
-            done.add((sid, k))
-            for i, x in enumerate(shop.get("msgs") or []):
-                if isinstance(x, dict) and x.get("k") == k and x.get("via") == "app":
-                    t = str(escape(x.get("text", "")))
-                    out.append((sid + "msg" + str(i) + (x.get("at") or "").replace(" ", "").replace(":", "").replace("-", ""), "yellow", "&#128172;",
-                                "Message from " + str(escape(shop.get("name", ""))), t[:200] + ("&hellip;" if len(t) > 200 else ""),
-                                str(escape(_bb_hub_when(x.get("at") or ""))), "/m/" + sid + "/" + str(b.get("rt")), x.get("at") or ""))
-    except Exception as ex:
-        print("message updates:", ex)
-    return out
+    return _bb_cu_booking_items() + _bb_closed_items()
 try:
     _BB_JA.update({"Message from": "お店からのメッセージ："})
 except Exception:
@@ -6220,7 +6428,6 @@ def _bb_apm_wrap(prev, rows, limit, compact):
     h = ""
     for r in (rows[:limit] if limit else rows):
         one = prev([r])
-        when, sid, shop, b = r
         if compact:
             i = one.rfind("</a>")
             if i >= 0:
@@ -6229,13 +6436,6 @@ def _bb_apm_wrap(prev, rows, limit, compact):
             i = one.find(">")
             if i >= 0:
                 one = one[:i + 1] + "<span style='float:right'>" + _BB_APM_ARROW + "</span>" + one[i + 1:]
-        x = _bb_apm_last(shop, b)
-        if x:
-            raw = str(x.get("text", ""))
-            t = str(escape(raw[:120])) + ("&hellip;" if len(raw) > 120 else "")
-            one += ("<a class='bbapmsg' href='/m/" + sid + "/" + str(escape(b["rt"])) + "' style='display:block;background:#fff6d6;"
-                    "border:1px solid #f0d36b;color:#5a4500;border-radius:10px;padding:7px 10px;margin:2px 0 8px;text-decoration:none;font-size:14px'>"
-                    "&#128172; <b>" + str(escape(shop.get("name", ""))) + ":</b> " + t + "</a>")
         h += one
     return h
 def _bb_ap_card(rows, limit=None):
@@ -6505,10 +6705,9 @@ def _bb_ap_get():
         for sid, shop in d.items():
             if not ems or not isinstance(shop, dict):
                 continue
-            for b in shop.get("bookings") or []:
+            for b in (shop.get("bookings") or []) + (shop.get("cancelled") or []) + (shop.get("noshows") or []):
                 if isinstance(b, dict) and b.get("rt") and (b.get("email") or "").strip().lower() in ems and (sid, str(b["rt"])) not in out:
                     out.append((sid, str(b["rt"])))
-                    break
     except Exception as ex:
         print("login appts:", ex, flush=True)
     return out
