@@ -6444,6 +6444,54 @@ except Exception:
     pass
 # ===== END BB MESSAGES 2 =====
 
+
+# ===== BB AP MSG LINES =====
+def _bb_apm_last(shop, b):
+    try:
+        k = _bb_msg_key(b)
+        for x in reversed(shop.get("msgs") or []):
+            if isinstance(x, dict) and k and x.get("k") == k and x.get("via") == "app" and x.get("text"):
+                return x
+    except Exception:
+        pass
+    return None
+_BB_APM_ARROW = "<span class='bbaparrow' style='color:#1a6dff;font-size:24px;font-weight:800;line-height:1;margin-left:6px'>&rsaquo;</span>"
+def _bb_apm_wrap(prev, rows, limit, compact):
+    h = ""
+    for r in (rows[:limit] if limit else rows):
+        one = prev([r])
+        when, sid, shop, b = r
+        if compact:
+            i = one.rfind("</a>")
+            if i >= 0:
+                one = one[:i] + _BB_APM_ARROW + one[i:]
+        else:
+            i = one.find(">")
+            if i >= 0:
+                one = one[:i + 1] + "<span style='float:right'>" + _BB_APM_ARROW + "</span>" + one[i + 1:]
+        x = _bb_apm_last(shop, b)
+        if x:
+            raw = str(x.get("text", ""))
+            t = str(escape(raw[:120])) + ("&hellip;" if len(raw) > 120 else "")
+            one += ("<a class='bbapmsg' href='/m/" + sid + "/" + str(escape(b["rt"])) + "' style='display:block;background:#fff6d6;"
+                    "border:1px solid #f0d36b;color:#5a4500;border-radius:10px;padding:7px 10px;margin:2px 0 8px;text-decoration:none;font-size:14px'>"
+                    "&#128172; <b>" + str(escape(shop.get("name", ""))) + ":</b> " + t + "</a>")
+        h += one
+    return h
+_bb_apm_card_prev = _bb_ap_card
+def _bb_ap_card(rows, limit=None):
+    try:
+        return _bb_apm_wrap(_bb_apm_card_prev, rows, limit, False)
+    except Exception:
+        return _bb_apm_card_prev(rows, limit)
+_bb_apm_compact_prev = _bb_ap_compact
+def _bb_ap_compact(rows, limit=None):
+    try:
+        return _bb_apm_wrap(_bb_apm_compact_prev, rows, limit, True)
+    except Exception:
+        return _bb_apm_compact_prev(rows, limit)
+# ===== END BB AP MSG LINES =====
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
