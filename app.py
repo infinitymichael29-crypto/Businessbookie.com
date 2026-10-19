@@ -7055,6 +7055,44 @@ def _bb_al_after(resp):
 app.after_request_funcs.setdefault(None, []).insert(0, _bb_al_after)
 # ===== END BB OWNER ALERTS =====
 
+
+# ===== BB OWNER PUSH KEEP =====
+from flask import g as _bb_op_g
+def _bb_op_before():
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method == "POST" and len(pp) == 2 and pp[0] == "del":
+            shop = load().get(pp[1])
+            if isinstance(shop, dict):
+                _bb_op_g.bb_op = (pp[1], (shop.get("email") or "").strip().lower(), list(shop.get("push") or []))
+    except Exception as ex:
+        print("keep alerts before:", ex, flush=True)
+def _bb_op_after(resp):
+    try:
+        info = getattr(_bb_op_g, "bb_op", None)
+        if not info or not info[1] or not info[2]:
+            return resp
+        sid, em, subs = info
+        d = load()
+        if sid in d:
+            return resp
+        ch = False
+        for k, v in d.items():
+            if isinstance(v, dict) and (v.get("email") or "").strip().lower() == em:
+                have = {x.get("endpoint") for x in v.get("push") or [] if isinstance(x, dict)}
+                add = [x for x in subs if isinstance(x, dict) and x.get("endpoint") and x["endpoint"] not in have]
+                if add:
+                    v["push"] = (list(v.get("push") or []) + add)[-10:]
+                    ch = True
+        if ch:
+            save(d)
+    except Exception as ex:
+        print("keep alerts after:", ex, flush=True)
+    return resp
+app.before_request_funcs.setdefault(None, []).append(_bb_op_before)
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_op_after)
+# ===== END BB OWNER PUSH KEEP =====
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
