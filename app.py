@@ -6492,6 +6492,122 @@ def _bb_ap_compact(rows, limit=None):
         return _bb_apm_compact_prev(rows, limit)
 # ===== END BB AP MSG LINES =====
 
+
+# ===== BB PUSH DEAD =====
+import sys as _bb_pd_sys, threading as _bb_pd_th, re as _bb_pd_re
+try:
+    _bb_pd_sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
+_BB_PUSH_DEAD = set()
+_bb_pd_tl = _bb_pd_th.local()
+def _bb_pd_res():
+    r = getattr(_bb_pd_tl, "res", None)
+    return r if r is not None else {"tried": 0, "ok": 0, "err": 0, "dead": []}
+def _bb_push_send(subs, title, body, url):
+    import json as _j
+    st = _bb_pd_res()
+    priv = os.environ.get("VAPID_PRIVATE", "")
+    if not priv or not subs:
+        return
+    from pywebpush import webpush, WebPushException
+    data = _j.dumps({"title": title[:80], "body": body[:180], "url": url})
+    for s in subs:
+        ep = s.get("endpoint", "") if isinstance(s, dict) else ""
+        st["tried"] += 1
+        if ep in _BB_PUSH_DEAD:
+            st["dead"].append(ep)
+            continue
+        try:
+            webpush(subscription_info=s, data=data, vapid_private_key=priv,
+                    vapid_claims={"sub": "mailto:" + globals().get("_BB_CONTACT", "infinitymichael29@gmail.com")}, timeout=10)
+            st["ok"] += 1
+        except WebPushException as e:
+            code = getattr(getattr(e, "response", None), "status_code", None)
+            if code in (404, 410):
+                _BB_PUSH_DEAD.add(ep)
+                st["dead"].append(ep)
+            else:
+                st["err"] += 1
+            print("push send:", code, str(e)[:150], flush=True)
+        except Exception as e:
+            st["err"] += 1
+            print("push send:", str(e)[:150], flush=True)
+_bb_pd_bg_prev = _bb_msg_bg
+def _bb_msg_bg(fn, *a):
+    if getattr(_bb_pd_tl, "sync", False):
+        return fn(*a)
+    return _bb_pd_bg_prev(fn, *a)
+_bb_pd_deliver_prev = _bb_msg_deliver
+def _bb_msg_deliver(d, sid, shop, b, k, em, text):
+    _bb_pd_tl.res = {"tried": 0, "ok": 0, "err": 0, "dead": []}
+    _bb_pd_tl.sync = True
+    try:
+        out = _bb_pd_deliver_prev(d, sid, shop, b, k, em, text)
+        res = _bb_pd_tl.res
+    finally:
+        _bb_pd_tl.sync = False
+        _bb_pd_tl.res = None
+    try:
+        if res["tried"]:
+            dead = set(res["dead"])
+            if dead:
+                for lst in ("bookings", "cancelled", "noshows"):
+                    for x in shop.get(lst) or []:
+                        if isinstance(x, dict) and x.get("push"):
+                            x["push"] = [q for q in x["push"] if not (isinstance(q, dict) and q.get("endpoint") in dead)]
+                if shop.get("push"):
+                    shop["push"] = [q for q in shop["push"] if not (isinstance(q, dict) and q.get("endpoint") in dead)]
+            if not res["ok"]:
+                ms = shop.get("msgs") or []
+                if ms and isinstance(ms[-1], dict) and "push" in (ms[-1].get("ch") or []):
+                    ms[-1]["ch"] = [c for c in ms[-1]["ch"] if c != "push"]
+                out = out.replace(" + &#128276; Notification", "")
+                why = "their phone's notification signup has expired" if dead else "the notification service didn't answer"
+                out += ("<p id='bbpushfail' style='color:#8a6d00;background:#fff6d6;border-radius:10px;padding:8px'>&#9888;&#65039; The notification didn't go through: " + why +
+                        ". They'll still see it in Updates" + (" and email" if em else "") + ". Ask them to open their booking and tap Turn on notifications again.</p>")
+            if dead or not res["ok"]:
+                save(d)
+    except Exception as ex:
+        print("push check:", ex, flush=True)
+    return out
+def _bb_pd_ask(resp):
+    try:
+        pth = request.path
+        ok = (request.method == "POST" and pth.startswith("/book/")) or pth.startswith("/paid")
+        if not ok or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbpushask'" in h:
+            return resp
+        a = h.find("<div class='card' id='bbpush'>")
+        z = h.find("})();</script>", a) if a >= 0 else -1
+        if a >= 0 and z >= 0:
+            z += len("})();</script>")
+            box, h = h[a:z], h[:a] + h[z:]
+        else:
+            sid0 = _bb_pd_re.escape(pth.split("/")[2]) if pth.startswith("/book/") and len(pth.split("/")) > 2 else r"[A-Za-z0-9_-]+"
+            mm = _bb_pd_re.search(r"/(?:m|my)/(" + sid0 + r")/([A-Za-z0-9_-]+)", h)
+            box = _bb_push_box(mm.group(1), mm.group(2), "customer") if mm else ""
+        if not box:
+            return resp
+        ask = ("<div id='bbpushask' style='border:3px solid #ffd400;background:#fffbe6;border-radius:14px;padding:6px;margin:10px 0;color:#0b1f4d'>"
+               "<div style='font-size:20px;font-weight:800;text-align:center;margin:6px'>&#128276; Get updates on your phone?</div>"
+               "<div style='text-align:center;font-size:14px;color:#556'>Get a notification if the shop messages you or your time changes.</div>" + box + "</div>")
+        j = h.find("</h1>")
+        h = h[:j + 5] + ask + h[j + 5:] if j >= 0 else ask + h
+        resp.set_data(h)
+    except Exception as ex:
+        print("push ask:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_pd_ask)
+try:
+    _BB_JA.update({"Get updates on your phone?": "スマホでお知らせを受け取りますか？",
+                   "Get a notification if the shop messages you or your time changes.": "お店からのメッセージや時間の変更をお知らせします。"})
+except Exception:
+    pass
+# ===== END BB PUSH DEAD =====
+
 import os
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
