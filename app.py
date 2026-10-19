@@ -527,7 +527,7 @@ def _bb_manage(sid, rt):
         started = datetime.strptime(b.get("when", ""), "%Y-%m-%d %H:%M") <= (datetime.utcnow() - timedelta(hours=10))
     except Exception:
         started = False
-    head = "<h1>Your booking</h1><p><b>" + str(escape(b.get("service", ""))) + "</b> at " + str(escape(shop["name"])) + "</p><p>When: " + str(escape(b.get("when", ""))) + "</p><p>Paid: $" + ("%.2f" % (total / 100)) + "</p>"
+    head = "<h1>Your booking</h1><p><b>" + str(escape(b.get("service", ""))) + "</b> at " + str(escape(shop["name"])) + "</p><p>When: " + str(escape(b.get("when", ""))) + "</p><p>Paid: $" + ("%.2f" % (total / 100)) + "</p>" + _bb_call_btn(shop)
     if started:
         return S + head + "<p>This appointment has already started, so it can't be changed online. Please contact the business.</p>"
     if request.method == "POST" and request.form.get("act") == "cancel":
@@ -1157,9 +1157,14 @@ def _bb_edit(sid):
             shop["owner"] = f.get("owner", "").strip()[:80]
             shop["addr"] = f.get("addr", "").strip()[:200]
             shop["bphone"] = f.get("bphone", "").strip()[:30]
-            shop["guests_on"] = f.get("guests_on") == "1"
-            shop["tables"] = max(1, min(99, int(f.get("tables") or 5))) if (f.get("tables") or "5").strip().isdigit() else 5
-            shop["deposit"] = int(f.get("deposit")) if (f.get("deposit") or "").strip().isdigit() else 25
+            if f.get("has_guests") == "1":
+                shop["guests_on"] = f.get("guests_on") == "1"
+            if "tables" in f:
+                shop["tables"] = max(1, min(99, int(f.get("tables") or 5))) if (f.get("tables") or "5").strip().isdigit() else 5
+            if "deposit" in f:
+                shop["deposit"] = int(f.get("deposit")) if (f.get("deposit") or "").strip().isdigit() else 25
+            if f.get("btype") in TEMPLATES or (f.get("btype") and f.get("btype") == shop.get("type")):
+                shop["type"] = f.get("btype")
             shop["about"] = (f.get("about") or "").strip()[:600]
             if f.get("photo_rm") == "1":
                 shop.pop("photo", None)
@@ -1187,7 +1192,7 @@ def _bb_edit(sid):
         rows += "<div class='card'><input name='sn" + str(i) + "' value='" + e(n) + "' placeholder='Service name'><input name='sp" + str(i) + "' type='number' step='0.01' min='0' value='" + e(ps) + "' placeholder='Price $'><label style='color:#e23b3b'><input type='checkbox' name='sx" + str(i) + "' value='1' style='width:auto'> Remove this service</label></div>"
     for j in range(len(items), len(items) + 3):
         rows += "<div class='card' style='background:#f7f9ff'><input name='sn" + str(j) + "' placeholder='New service (optional)'><input name='sp" + str(j) + "' type='number' step='0.01' min='0' placeholder='Price $'></div>"
-    return S + "<h1>&#9999;&#65039; Edit customer booking page</h1>" + msg + "<form method='post'><h3>Business info</h3><p>Business name</p><input name='name' value='" + e(shop.get("name", "")) + "' required><p>Your name</p><input name='owner' value='" + e(shop.get("owner", "")) + "'><p>Address</p><input name='addr' value='" + e(shop.get("addr", "")) + "'>" + _bb_bphone_in(shop) + "<h3>Hours</h3><p><b>Days you're open:</b></p>" + dbox + "<p>Opening time</p><input type='time' name='open' value='" + e(shop.get("open", "09:00")) + "'><p>Closing time</p><input type='time' name='close' value='" + e(shop.get("close", "17:00")) + "'><p>Appointment length</p><select name='slot'>" + sopt + "</select><h3>Services &amp; prices</h3>" + rows + "<button>Save changes</button></form><p><a href='/b/" + sid + "'>&#128064; Preview my page</a></p><a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
+    return S + "<h1>&#9999;&#65039; Edit customer booking page</h1>" + msg + "<form method='post'><h3>Business info</h3><p>Business name</p><input name='name' value='" + e(shop.get("name", "")) + "' required>" + _bb_type_sel(shop) + "<p>Your name</p><input name='owner' value='" + e(shop.get("owner", "")) + "'><p>Address</p><input name='addr' value='" + e(shop.get("addr", "")) + "'>" + _bb_bphone_in(shop) + "<h3>Hours</h3><p><b>Days you're open:</b></p>" + dbox + "<p>Opening time</p><input type='time' name='open' value='" + e(shop.get("open", "09:00")) + "'><p>Closing time</p><input type='time' name='close' value='" + e(shop.get("close", "17:00")) + "'><p>Appointment length</p><select name='slot'>" + sopt + "</select><h3>Services &amp; prices</h3>" + rows + "<button>Save changes</button></form><p><a href='/b/" + sid + "'>&#128064; Preview my page</a></p><a href='/d/" + sid + "'>&#8592; Back to dashboard</a>"
 
 
 def _bb_me():
@@ -1289,6 +1294,15 @@ def _bb_terms():
 <p><a href='mailto:""" + _BB_CONTACT + "'>" + _BB_CONTACT + """</a></p>
 <p><a href='/privacy'>Privacy Policy</a> &middot; <a href='/'>Home</a></p>"""
 
+def _bb_call_btn(shop):
+    p = (shop.get("bphone") or "").strip() if isinstance(shop, dict) else ""
+    d = "".join(c for c in p if c.isdigit() or c == "+")
+    if not d:
+        return ""
+    return ("<a id='bbcallbiz' href='tel:" + str(escape(d)) + "' style='display:block;text-align:center;padding:14px;margin:10px 0;border-radius:12px;"
+            "text-decoration:none;font-weight:800;background:#1faa59;color:#fff'>&#128222; <span>Call</span> " + str(escape(shop.get("name", ""))) + " &middot; " + str(escape(p)) + "</a>")
+
+
 def _bb_phone_html(shop):
     p = (shop.get("bphone") or "").strip()
     if not p:
@@ -1301,7 +1315,60 @@ def _bb_bp_phone(shop):
     return "<p>Business phone</p><input name='bphone' type='tel' placeholder='(808) 555-1234' value='" + str(escape(shop.get("bphone", ""))) + "'>"
 
 
+_BB_ALL_FEATS = ("guests", "tables", "partydep", "staff", "walkins", "rebook", "where")
+_BB_TYPE_FEATS = {
+    "Restaurant": ("guests", "tables", "partydep", "walkins"),
+    "Barber": ("staff", "walkins", "rebook", "where"),
+    "Hair salon": ("staff", "rebook", "where"),
+    "Nails": ("staff", "walkins", "rebook", "where"),
+    "Lashes and brows": ("staff", "rebook", "where"),
+    "Massage": ("staff", "where"),
+    "Tattoo": ("staff",),
+    "Photography": ("where",),
+    "Cleaning": ("staff", "rebook", "where"),
+    "Personal trainer": ("staff", "rebook", "where"),
+}
+_BB_TYPE_WHERE = {
+    "Barber": ("shop", "mobile", "both"), "Hair salon": ("shop", "mobile", "both"), "Nails": ("shop", "mobile", "both"),
+    "Lashes and brows": ("shop", "mobile", "both"), "Massage": ("shop", "mobile", "both"), "Photography": ("shop", "mobile", "both"),
+    "Cleaning": ("mobile", "both"),
+}
+_BB_TYPE_STAFF = {"Barber": "barbers", "Hair salon": "stylists", "Nails": "nail techs", "Lashes and brows": "artists", "Massage": "therapists",
+                  "Tattoo": "artists", "Cleaning": "cleaners or crews", "Personal trainer": "trainers"}
+_BB_TYPE_REBOOK = {"Barber": 21, "Hair salon": 42, "Nails": 18, "Lashes and brows": 21, "Cleaning": 14, "Personal trainer": 7}
+
+
+def _bb_type_key(shop):
+    ty = ((shop or {}).get("type") or "").strip().lower() if isinstance(shop, dict) else ""
+    for k in TEMPLATES:
+        if k.lower() == ty:
+            return k
+    if any(w in ty.split() or ty == w for w in ("restaurant", "cafe", "diner", "bar", "grill", "bistro", "eatery")):
+        return "Restaurant"
+    return "Other"
+
+
+def _bb_feat(shop, f):
+    return f in _BB_TYPE_FEATS.get(_bb_type_key(shop), _BB_ALL_FEATS)
+
+
+def _bb_walkins_on(shop):
+    return bool(isinstance(shop, dict) and shop.get("walkins") and _bb_feat(shop, "walkins"))
+
+
+def _bb_type_sel(shop):
+    cur = (shop.get("type") or "Other") if isinstance(shop, dict) else "Other"
+    ks = list(TEMPLATES)
+    if cur not in ks:
+        ks.append(cur)
+    o = "".join("<option value='" + str(escape(k)) + "'" + (" selected" if k == cur else "") + ">" + str(escape(k)) + "</option>" for k in ks)
+    return ("<p>Business type</p><select name='btype'>" + o + "</select>"
+            "<p style='font-size:12px;color:#556;margin:2px 0 8px'>Changes which settings you see below. Save, and the page shows the settings for your type.</p>")
+
+
 def _bb_guests_on(shop):
+    if not _bb_feat(shop, "guests"):
+        return False
     if "guests_on" in shop:
         return bool(shop["guests_on"])
     ty = (shop.get("type") or "").lower()
@@ -1318,6 +1385,9 @@ def _bb_guests_sel_basic(shop):
 
 
 def _bb_bp_guests(shop, h):
+    if not _bb_feat(shop, "guests"):
+        return h
+    h += "<input type='hidden' name='has_guests' value='1'>"
     ck = " checked" if _bb_guests_on(shop) else ""
     return h + "<p><label><input type='checkbox' name='guests_on' value='1'" + ck + " style='width:auto'> Ask customers for number of guests (restaurants)</label></p>"
 
@@ -1341,6 +1411,8 @@ def _bb_guests_hook():
 
 
 def _bb_bp_tables(shop, h):
+    if not _bb_feat(shop, "tables"):
+        return h
     return h + "<p>Tables per time slot (restaurants)</p><input name='tables' type='number' min='1' max='99' value='" + str(shop.get("tables") or 5) + "'>"
 
 
@@ -1373,6 +1445,8 @@ def _bb_guests_sel(shop):
 
 
 def _bb_bp_deposit(shop, h):
+    if not _bb_feat(shop, "partydep"):
+        return h
     return h + "<p>Large party (9+) deposit in $ (0 = no deposit)</p><input name='deposit' type='number' min='0' max='999' value='" + str(_bb_dep(shop)) + "'>"
 
 
@@ -2855,7 +2929,7 @@ _BB_CTX = {"staff": None}
 
 
 def _bb_staff(shop):
-    if not isinstance(shop, dict) or _bb_guests_on(shop):
+    if not isinstance(shop, dict) or _bb_guests_on(shop) or not _bb_feat(shop, "staff"):
         return []
     return [s for s in (shop.get("staff") or []) if isinstance(s, dict) and s.get("id")]
 
@@ -3035,15 +3109,25 @@ def _bb_nfx_staffnote(subject, body, to=None):
 
 
 def _bb_staff_form(shop):
-    names = "\n".join(s.get("name", "") for s in _bb_staff(shop))
-    rd = str(int(shop.get("rebook_days") or 0))
-    return ("<h3>Staff</h3><p style='font-size:13px;color:#556'>One name per line. Customers can pick who they want, or \"Anyone available\". "
-            "Each person can take one appointment at a time. Leave empty if it's just you.</p>"
-            "<textarea name='staff_names' rows='4' placeholder='Kawika&#10;Leilani&#10;Noa'>" + str(escape(names)) + "</textarea>"
-            "<h3>Walk-ins</h3><label style='display:flex;gap:8px;align-items:center'><input type='checkbox' name='walkins' value='1' style='width:auto'" +
-            (" checked" if shop.get("walkins") else "") + "> Let walk-ins join a line online (shows a \"Join the line\" button on your page)</label>"
-            "<h3>Bring customers back</h3><p style='font-size:13px;color:#556'>Email customers a \"time to book again\" reminder this many days after their visit (0 = off). "
-            "Skipped if they already have a booking.</p><input type='number' name='rebook_days' min='0' max='120' value='" + rd + "'>")
+    k = _bb_type_key(shop)
+    out = "<!--bbstaff-->"
+    if _bb_feat(shop, "staff"):
+        names = "\n".join(s.get("name", "") for s in _bb_staff(shop))
+        who = _BB_TYPE_STAFF.get(k)
+        out += ("<h3>Staff</h3><p style='font-size:13px;color:#556'>One name per line" + (" (your " + who + ")" if who else "") +
+                ". Customers can pick who they want, or \"Anyone available\". "
+                "Each person can take one appointment at a time. Leave empty if it's just you.</p>"
+                "<textarea name='staff_names' rows='4' placeholder='Kawika&#10;Leilani&#10;Noa'>" + str(escape(names)) + "</textarea>")
+    if _bb_feat(shop, "walkins"):
+        out += ("<h3>Walk-ins</h3><input type='hidden' name='has_walkins' value='1'><label style='display:flex;gap:8px;align-items:center'><input type='checkbox' name='walkins' value='1' style='width:auto'" +
+                (" checked" if shop.get("walkins") else "") + "> Let walk-ins join a line online (shows a \"Join the line\" button on your page)</label>")
+    if _bb_feat(shop, "rebook"):
+        rd = str(int(shop.get("rebook_days") or 0))
+        tip = _BB_TYPE_REBOOK.get(k)
+        out += ("<h3>Bring customers back</h3><p style='font-size:13px;color:#556'>Email customers a \"time to book again\" reminder this many days after their visit (0 = off). "
+                "Skipped if they already have a booking." + (" Most " + k.lower() + " businesses use about " + str(tip) + " days." if tip else "") +
+                "</p><input type='number' name='rebook_days' min='0' max='120' value='" + rd + "'>")
+    return out
 
 
 
@@ -3086,10 +3170,13 @@ def _bb_v3_edit():
                 new.append(o)
             else:
                 new.append({"id": (_re.sub(r"[^a-z0-9]+", "", n.lower())[:12] or "staff") + _sec.token_hex(2), "name": n})
-        shop["staff"] = new[:20]
-        shop["walkins"] = f.get("walkins") == "1"
-        rd = (f.get("rebook_days") or "0").strip()
-        shop["rebook_days"] = max(0, min(120, int(rd))) if rd.isdigit() else 0
+        if "staff_names" in f:
+            shop["staff"] = new[:20]
+        if f.get("has_walkins") == "1":
+            shop["walkins"] = f.get("walkins") == "1"
+        if "rebook_days" in f:
+            rd = (f.get("rebook_days") or "0").strip()
+            shop["rebook_days"] = max(0, min(120, int(rd))) if rd.isdigit() else 0
         save(d)
     except Exception as e:
         print("v3 edit:", e)
@@ -3137,7 +3224,7 @@ def _bb_book_extras(sid, shop, h):
             j = h.find("<button", i)
         if j >= 0:
             h = h[:j] + "<textarea name='note' rows='2' maxlength='300' placeholder='Anything the business should know? (optional)'></textarea>" + h[j:]
-    if shop.get("walkins") and "id='bbline'" not in h:
+    if _bb_walkins_on(shop) and "id='bbline'" not in h:
         n = len(_bb_q_wait(shop))
         btn = ("<a id='bbline' href='/line/" + sid + "' style='display:block;text-align:center;padding:12px;margin:10px 0;border:2px solid #1faa59;color:#1faa59;"
                "border-radius:10px;text-decoration:none;font-weight:700'>&#128694; Walking in? Join the line (" + str(n) + " waiting)</a>")
@@ -3203,7 +3290,7 @@ def _bb_owner_cards(sid, shop):
             rows += "".join("<div style='font-size:14px;padding:4px 0;border-bottom:1px solid #eef'>" + e(_bb_fmt(b["when"])) + " &middot; " + e(b.get("name", "")) +
                             " &middot; " + e(b.get("service", "")) + ("<br><i>&#128221; " + e(b["note"]) + "</i>" if b.get("note") else "") + "</div>" for b in bl) or "<div style='font-size:13px;color:#889'>Nothing booked</div>"
         out += "<div class='card' id='bbstaffcard'><b>&#128197; Next 7 days by staff</b>" + rows + "</div>"
-    if shop.get("walkins"):
+    if _bb_walkins_on(shop):
         q = _bb_q_wait(shop)
         btn = "padding:6px 10px;margin:2px;border-radius:8px;border:1px solid #1a6dff;background:#fff;color:#1a6dff;font-weight:700"
         rows = "".join("<form method='post' action='/line/" + sid + "/act' style='display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0'>"
@@ -3350,7 +3437,7 @@ def bb_line(sid):
     import secrets as _sec
     d = load()
     shop = d.get(sid)
-    if not shop or not shop.get("walkins"):
+    if not shop or not _bb_walkins_on(shop):
         return S + "<h1>This business isn't taking walk-ins online right now</h1><a href='/b/" + sid + "'>Book an appointment instead</a>", 404
     e = lambda s: str(escape(s))
     q = _bb_q_wait(shop)
@@ -3435,7 +3522,7 @@ def _bb_reminders_with_rebook(host):
         for sid, shop in d.items():
             if not isinstance(shop, dict):
                 continue
-            rd = int(shop.get("rebook_days") or 0)
+            rd = int(shop.get("rebook_days") or 0) if _bb_feat(shop, "rebook") else 0
             if rd <= 0:
                 continue
             now = _bb_local_now(shop)
@@ -3804,11 +3891,20 @@ def _bb_nfx_housecall(subject, body, to=None):
     return body
 
 
+def _bb_where_opts(shop):
+    ok = list(_BB_TYPE_WHERE.get(_bb_type_key(shop), ("shop", "mobile", "both", "online")))
+    wh = _bb_where(shop)
+    if wh not in ok:
+        ok.append(wh)
+    return ok
+
+
 def _bb_where_form_basic(shop):
     e = lambda s: str(escape(s))
     wh = _bb_where(shop)
+    ok = _bb_where_opts(shop)
     op = "".join("<option value='" + k + "'" + (" selected" if wh == k else "") + ">" + lab + "</option>" for k, lab in
-                 (("shop", "Customers come to me (my address)"), ("mobile", "I go to the customer (house calls)"), ("both", "Both - customer picks"), ("online", "Online / video call (no address needed)")))
+                 (("shop", "Customers come to me (my address)"), ("mobile", "I go to the customer (house calls)"), ("both", "Both - customer picks"), ("online", "Online / video call (no address needed)")) if k in ok)
     warn = ("<p style='color:#b37400;font-size:13px'>&#9888; We couldn't find your home base on the map. Check the address.</p>"
             if shop.get("base") and not shop.get("base_ll") else "")
     return ("<h3>Where do appointments happen?</h3><select name='where'>" + op + "</select>"
@@ -3824,8 +3920,8 @@ def _bb_where_form_basic(shop):
 
 def _bb_bp_where(shop, h):
     h = h
-    if isinstance(shop, dict) and "services" in shop and "<h3>Staff</h3>" in h and "name='where'" not in h:
-        i = h.find("<h3>Staff</h3>")
+    if isinstance(shop, dict) and "services" in shop and "<!--bbstaff-->" in h and "name='where'" not in h and _bb_feat(shop, "where"):
+        i = h.find("<!--bbstaff-->")
         h = h[:i] + _bb_where_form(shop) + h[i:]
     return h
 
@@ -4086,7 +4182,7 @@ def _bb_meet(shop):
 def _bb_v5_edit():
     try:
         p = request.path.strip("/").split("/")
-        if request.method == "POST" and len(p) == 2 and p[0] == "edit" and request.form.get("bb_hours") == "1" and "where" in request.form:
+        if request.method == "POST" and len(p) == 2 and p[0] == "edit" and request.form.get("bb_hours") == "1" and "where" in request.form and "meet" in request.form:
             if not _bb_sess.get("own_" + p[1]):
                 return None
             u = " ".join((request.form.get("meet") or "").split())[:300]
@@ -4124,6 +4220,8 @@ app.before_request_funcs.setdefault(None, []).insert(0, _bb_v5_create)
 
 
 def _bb_where_form(shop):
+    if "online" not in _bb_where_opts(shop):
+        return _bb_where_form_basic(shop)
     return (_bb_where_form_basic(shop) +
             "<p>Video call link (for online appointments)</p><input name='meet' maxlength='300' placeholder='https://zoom.us/j/... or https://meet.google.com/...' value='" +
             str(escape(shop.get("meet", ""))) + "'>")
@@ -4988,7 +5086,7 @@ def bb_appointments():
     past = _bb_ap_past(pairs)
     h = "<h1>My appointments</h1>" + _bb_inbox_buttons()
     if rows:
-        h += "<p>Your upcoming bookings. Tap one to see directions, reschedule, cancel or message the shop.</p>" + _bb_ap_card(rows)
+        h += "<p>Your upcoming bookings. Tap one to see directions, reschedule or cancel.</p>" + _bb_ap_card(rows)
     else:
         h += "<p>No upcoming appointments saved on this phone yet. After you book, they show up here automatically.</p>"
     if past:
@@ -5670,7 +5768,7 @@ def bb_cday(sid, ds):
             acts += "<a href='tel:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128222; Call</a>"
             acts += "<a href='sms:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128172; Text</a>"
         if x.get("rt"):
-            acts += "<a href='/msg/" + sid + "?rt=" + rt + "' style='" + btn + "background:#1a6dff;color:#fff'>&#128172; Message</a>"
+            c += _bb_dm_bell(shop, x)
         if x.get("rt") and not x.get("done"):
             acts += "<a href='/ns/" + sid + "/" + rt + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128260; Reschedule</a>"
         if x.get("pi") and float(x.get("fee") or 0) > 0:
@@ -5911,7 +6009,7 @@ def _bb_cu_booking_items():
 _BB_IB_DAYS_KEEP = 2      # a booking's notifications disappear 2 days after the appointment
 _BB_IB_CLOSED_DAYS = 14   # a "business closed" notice shows for 14 days, then disappears
 try:
-    _BB_JA.update({"Notifications": "お知らせ", "Messages": "メッセージ", "Clear all": "すべて消去", "You're all caught up.": "新しいお知らせはありません。",
+    _BB_JA.update({"Notifications": "お知らせ", "Call": "電話する", "Clear all": "すべて消去", "You're all caught up.": "新しいお知らせはありません。",
                    "No messages yet.": "メッセージはまだありません。", "Past conversations": "過去のメッセージ"})
     _BB_JA_PATHS = _BB_JA_PATHS + ("/notifications", "/messages")
 except Exception:
@@ -6018,44 +6116,13 @@ def _bb_nt_state():
 def _bb_nt_unread():
     items, read, gone, first = _bb_nt_state()
     return len([1 for i in items if i[0] not in read])
-# --- messages: one conversation per booking ---
-def _bb_mg_read():
-    out = {}
-    for x in _bb_ck("bbmgread"):
-        rt, _, n = x.rpartition(".")
-        if rt and n.isdigit():
-            out[rt] = int(n)
-    return out
-def _bb_mg_threads():
-    pairs = _bb_ap_get()
-    out = []
-    groups = [("now", [(w, sid, shop, b) for w, sid, shop, b in _bb_ap_list(pairs)]), ("past", [(w, sid, shop, b) for w, sid, shop, b, st in _bb_ap_past(pairs)])]
-    seen = set()
-    for grp, rows in groups:
-        for w, sid, shop, b in rows:
-            rt = str(b.get("rt") or "")
-            if (sid, rt) in seen:
-                continue
-            seen.add((sid, rt))
-            ms = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("rt") == rt and x.get("text") and x.get("via") in ("app", "customer")]
-            if ms:
-                out.append({"grp": grp, "sid": sid, "rt": rt, "shop": shop, "b": b, "last": ms[-1], "napp": len([x for x in ms if x.get("via") == "app"])})
-    return out
-def _bb_mg_unread_map(threads):
-    first = "bbmgread" not in request.cookies
-    rd = _bb_mg_read()
-    return {t["rt"]: (0 if first else max(0, t["napp"] - rd.get(t["rt"], 0))) for t in threads}
-def _bb_mg_unread():
-    th = [t for t in _bb_mg_threads() if t["grp"] == "now"]
-    return sum(_bb_mg_unread_map(th).values())
 def _bb_ib_pill(n):
     return ("<span class='bbibn' style='display:inline-block;min-width:20px;text-align:center;background:#e23b3b;color:#fff;border-radius:999px;font-size:12px;"
             "font-weight:800;padding:1px 6px;margin-left:6px'>" + str(min(n, 99)) + "</span>") if n else ""
 def _bb_inbox_buttons():
     b = "flex:1;text-align:center;padding:12px 6px;border-radius:12px;text-decoration:none;font-weight:800;border:2px solid #1a6dff;color:#1a6dff;background:#fff"
     return ("<div id='bbinbox' style='display:flex;gap:10px;margin:10px 0 14px'>"
-            "<a href='/notifications' style='" + b + "'>&#128276; <span>Notifications</span>" + _bb_ib_pill(_bb_nt_unread()) + "</a>"
-            "<a href='/messages' style='" + b + "'>&#128172; <span>Messages</span>" + _bb_ib_pill(_bb_mg_unread()) + "</a></div>")
+            "<a href='/notifications' style='" + b + "'>&#128276; <span>Notifications</span>" + _bb_ib_pill(_bb_nt_unread()) + "</a></div>")
 def _bb_ib_back():
     return "<p><a href='/appointments' style='font-weight:700'>&#8592; My appointments</a></p>"
 @app.route("/notifications")
@@ -6080,34 +6147,6 @@ def bb_notifications():
     if first:
         _bb_ck_put(r, "bbntread", list(read))
     return r
-@app.route("/messages")
-def bb_messages_inbox():
-    from flask import make_response
-    e = lambda v: str(escape(str(v)))
-    th = _bb_mg_threads()
-    un = _bb_mg_unread_map(th)
-    def row(t):
-        n = un.get(t["rt"], 0)
-        x = t["last"]
-        who = "You: " if x.get("via") == "customer" else ""
-        raw = str(x.get("text", ""))
-        prev = e(raw[:80]) + ("&hellip;" if len(raw) > 80 else "")
-        return ("<a class='bbmgt' href='/inbox/open?m=" + _bb_oh_q(t["sid"] + ":" + t["rt"]) + "' style='display:flex;gap:10px;align-items:center;padding:12px;margin:8px 0;border-radius:12px;"
-                "text-decoration:none;color:#0b1f4d;background:" + ("#eef3ff" if n else "#fff") + ";border:1px solid #d7e0f0;text-align:left'><span style='font-size:22px'>&#128172;</span>"
-                "<span style='flex:1'>" + ("<b>" if n else "") + e(t["shop"].get("name", "")) + ("</b>" if n else "") + _bb_ib_pill(n)
-                + "<br><span style='font-size:13px;color:#556'>" + e(t["b"].get("service", "")) + " &middot; " + e(_bb_hub_when(t["b"].get("when") or "")) + "</span>"
-                "<br><span style='font-size:14px;color:" + ("#0b1f4d;font-weight:700" if n else "#556") + "'>" + who + prev + "</span></span></a>")
-    now = [t for t in th if t["grp"] == "now"]
-    past = [t for t in th if t["grp"] == "past"]
-    h = _bb_ib_back() + "<h1>&#128172; <span>Messages</span></h1>"
-    h += "".join(row(t) for t in now) if now else "<p style='color:#556'><span>No messages yet.</span></p>"
-    if past:
-        h += ("<details style='margin:12px 0'><summary style='font-weight:800;color:#556;cursor:pointer;padding:8px 0'>&#128193; <span>Past conversations</span> ("
-              + str(len(past)) + ")</summary>" + "".join(row(t) for t in past) + "</details>")
-    r = make_response(S + h)
-    if "bbmgread" not in request.cookies:
-        _bb_ck_put(r, "bbmgread", [t["rt"] + "." + str(t["napp"]) for t in th])
-    return r
 @app.route("/inbox/open")
 def bb_inbox_open():
     k, m = request.args.get("k") or "", request.args.get("m") or ""
@@ -6117,15 +6156,7 @@ def bb_inbox_open():
         r = _bb_rd(it[6] if it else "/notifications")
         _bb_ck_put(r, "bbntread", list(read) + [k])
         return r
-    sid, _, rt = m.partition(":")
-    t = next((t for t in _bb_mg_threads() if t["sid"] == sid and t["rt"] == rt), None)
-    if not t:
-        return _bb_rd("/messages")
-    r = _bb_rd("/m/" + sid + "/" + rt + "#bbcmsg")
-    rd = _bb_mg_read()
-    rd[rt] = t["napp"]
-    _bb_ck_put(r, "bbmgread", [a + "." + str(b) for a, b in rd.items()])
-    return r
+    return _bb_rd("/notifications")
 @app.route("/inbox/x")
 def bb_inbox_x():
     r = _bb_rd("/notifications")
@@ -6144,25 +6175,15 @@ def _bb_ib_after(resp):
             return resp
         p = request.path
         pp = p.strip("/").split("/")
-        if len(pp) == 3 and pp[0] == "m":
-            t = next((t for t in _bb_mg_threads() if t["sid"] == pp[1] and t["rt"] == pp[2]), None)
-            if t:
-                rd = _bb_mg_read()
-                if rd.get(t["rt"]) != t["napp"]:
-                    rd[t["rt"]] = t["napp"]
-                    _bb_ck_put(resp, "bbmgread", [a + "." + str(b) for a, b in rd.items()])
-            return resp
         if p not in ("/", "/find", "/appointments") or not _bb_ap_get():
             return resp
         if "bbntread" not in request.cookies:
             items, read, gone, first = _bb_nt_state()
             _bb_ck_put(resp, "bbntread", list(read))
-        if "bbmgread" not in request.cookies:
-            _bb_ck_put(resp, "bbmgread", [t["rt"] + "." + str(t["napp"]) for t in _bb_mg_threads()])
         if p == "/appointments":
             return resp
         h = resp.get_data(as_text=True)
-        n = _bb_nt_unread() + _bb_mg_unread()
+        n = _bb_nt_unread()
         if not n or "id='bbupbadge'" in h:
             return resp
         badge = ("<span id='bbupbadge' style='display:inline-block;min-width:20px;text-align:center;background:#e23b3b;color:#fff;border-radius:999px;"
@@ -6224,202 +6245,25 @@ def _bb_nspw_after(resp):
 # ===== END BB NOSHOW PASSWORD =====
 
 
-# ===== BB MESSAGES =====
-import json as _bb_mg_json, urllib.request as _bb_mg_url
-_BB_MSG_QUICK = ["Hi! I'm running about 10 minutes late. Sorry about that!", "Hi! Could we move your appointment? Reply with a time that works for you.",
-                 "Thanks for coming in today! See you next time.", "Reminder: see you tomorrow for your appointment."]
+# ===== BB MESSAGES OFF =====
+# Messaging was removed. Customers call the business; owners call or text the customer.
+# Old saved messages stay in the data, they just aren't shown.
 def _bb_msg_key(b):
     return (b.get("email") or b.get("phone") or b.get("name") or "").strip().lower()
-def _bb_msg_find(shop, rt=None, k=None):
-    best = None
-    for lst in ("bookings", "cancelled", "noshows"):
-        for x in shop.get(lst) or []:
-            if not isinstance(x, dict):
-                continue
-            if (rt and str(x.get("rt")) == rt) or (k and _bb_msg_key(x) == k):
-                if best is None or (x.get("when") or "") > (best.get("when") or ""):
-                    best = x
-    return best
-def _bb_msg_mail(payload):
-    rk = os.environ.get("RESEND_API_KEY")
-    if not rk:
-        raise Exception("email is not set up")
-    rq = _bb_mg_url.Request("https://api.resend.com/emails", data=_bb_mg_json.dumps(payload).encode(),
-                            headers={"Authorization": "Bearer " + rk, "Content-Type": "application/json", "User-Agent": "BusinessBookie/1.0"})
-    _bb_mg_url.urlopen(rq, timeout=20).read()
-def _bb_msg_send(shop, to, text):
-    nm = (shop.get("name") or "Business").replace("<", "").replace(">", "").replace('"', "")
-    body = text + "\n\n- " + nm + "\n(Reply to this email to answer " + nm + " directly.)"
-    payload = {"from": nm + " via Business-Bookie <bookings@business-bookie.com>", "to": [to], "subject": "Message from " + nm, "text": body}
-    if shop.get("email"):
-        payload["reply_to"] = shop["email"]
-    _bb_msg_mail(payload)
-def _bb_msg_log(shop, k, via, to, text):
-    shop.setdefault("msgs", []).append({"k": k, "via": via, "to": to, "text": text[:1000], "at": (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")})
-    shop["msgs"] = shop["msgs"][-500:]
-def _bb_msg_hist(shop, k, limit=20):
-    e = lambda x: str(escape(x))
-    rows = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("k") == k][::-1][:limit]
-    if not rows:
-        return "<p style='color:#556;margin:6px 0'>No messages sent yet.</p>"
-    out = ""
-    for x in rows:
-        icon = _bb_msg_via(x)
-        out += ("<div style='border-left:4px solid #1a6dff;background:#eef3ff;border-radius:8px;padding:8px 10px;margin:6px 0;text-align:left;font-size:14px'>"
-                "<div style='color:#556;font-size:12px'>" + e(_bb_hub_when(x.get("at") or "")) + " &middot; " + icon + "</div>" + e(x.get("text", "")) + "</div>")
-    return out
 @app.route("/msg/<sid>", methods=["GET", "POST"])
 def bb_msg(sid):
-    d = load()
-    shop = d.get(sid)
-    if not isinstance(shop, dict):
-        return S + "<h1>Business not found</h1>", 404
-    if not _bb_sess.get("own_" + sid):
-        return _bb_rd("/d/" + sid)
-    e = lambda x: str(escape(x))
-    rt, k = request.values.get("rt"), (request.values.get("k") or "").strip().lower()
-    b = _bb_msg_find(shop, rt=rt, k=k or None)
-    if b is None:
-        return S + "<h1>Customer not found</h1>" + _bb_rf_btn("/d/" + sid, "&#8592; Back to dashboard"), 404
-    k = _bb_msg_key(b)
-    em, ph = (b.get("email") or "").strip(), (b.get("phone") or "").strip()
-    text = (request.form.get("text") or "").strip()
-    msg = ""
-    if request.method == "POST":
-        act = request.form.get("act")
-        if act == "logtext" and text:
-            _bb_msg_log(shop, k, "phone", ph, text)
-            save(d)
-            return "ok"
-        if act == "email":
-            if not text:
-                msg = "<p style='color:#e23b3b'><b>Type a message first.</b></p>"
-            else:
-                msg = _bb_msg_deliver(d, sid, shop, b, k, em, text)
-                text = ""
-    chips = "".join("<button type='button' onclick=\"document.getElementById('bbmsgt').value=this.dataset.t\" data-t='" + e(q) + "' "
-                    "style='width:auto;display:inline-block;margin:3px;padding:7px 10px;font-size:13px;background:#eef3ff;color:#1a6dff;border:1px solid #c9d8ff'>" + e(q[:34]) + "&hellip;</button>" for q in _BB_MSG_QUICK)
-    js = ("<script>function bbsms(){var t=document.getElementById('bbmsgt').value;if(!t){alert('Type a message first');return false}"
-          "var f=new FormData();f.append('act','logtext');f.append('text',t);f.append('rt','" + e(b.get("rt", "")) + "');"
-          "try{navigator.sendBeacon(location.pathname+location.search,f)}catch(x){}"
-          "location.href='sms:" + e(ph) + "?&body='+encodeURIComponent(t);return false}</script>")
-    form = ("<form method='post'><input type='hidden' name='rt' value='" + e(b.get("rt", "")) + "'><p><b>Quick messages</b> (tap one, then edit)</p>" + chips
-            + "<textarea id='bbmsgt' name='text' rows='4' placeholder='Type your message'>" + e(text) + "</textarea>"
-            + "<button name='act' value='email'>&#128227; Send</button><p style='font-size:13px;color:#556;margin:4px 0'>Goes to their phone as a notification, to Updates in the app, and to their email.</p>"
-            + ""
-            + "</form><p style='font-size:12px;color:#556'>Keep messages about appointments. Promotional messages need the customer's separate permission.</p>")
-    head = ("<h1>&#128172; Message " + e(b.get("name", "")) + "</h1><div class='card' style='text-align:left'>" + (("&#9993;&#65039; " + e(em) + "<br>") if em else "")
-            + (("&#128222; " + e(ph)) if ph else "") + "</div>")
-    return (S + head + msg + form + js + "<h3>&#128340; Messages sent</h3><div class='card'>" + _bb_msg_hist(shop, k) + "</div>"
-            + _bb_rf_btn("/clients/" + sid, "&#128101; Clients") + _bb_rf_btn("/d/" + sid, "&#8592; Back to dashboard"))
-@app.after_request
-def _bb_msg_after(resp):
-    try:
-        pp = request.path.strip("/").split("/")
-        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200 or len(pp) != 2 or pp[0] != "clients":
-            return resp
-        sid = pp[1]
-        if not _bb_sess.get("own_" + sid):
-            return resp
-        h = resp.get_data(as_text=True)
-        if "class='bbmsgbtn'" in h:
-            return resp
-        shop = load().get(sid) or {}
-        tag = "<input type='hidden' name='a' value='note'><input type='hidden' name='k' value='"
-        out, pos = "", 0
-        while True:
-            i = h.find(tag, pos)
-            if i < 0:
-                break
-            j = h.find("'", i + len(tag))
-            f = h.rfind("<form", 0, i)
-            if j < 0 or f < pos:
-                out += h[pos:i + len(tag)]
-                pos = i + len(tag)
-                continue
-            kk = str(__import__("html").unescape(h[i + len(tag):j]))
-            n = len([x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("k") == kk])
-            btn = ("<a class='bbmsgbtn' href='/msg/" + sid + "?k=" + __import__("urllib.parse", fromlist=["quote"]).quote(kk) + "' style='display:inline-block;margin:8px 0 0;padding:8px 12px;"
-                   "border-radius:10px;background:#1a6dff;color:#fff;text-decoration:none;font-weight:700;font-size:14px'>&#128172; Message"
-                   + (" (" + str(n) + " sent)" if n else "") + "</a>")
-            out += h[pos:f] + btn + h[f:j]
-            pos = j
-        resp.set_data(out + h[pos:])
-    except Exception as ex:
-        print("messages:", ex)
-    return resp
-# ===== END BB MESSAGES =====
+    return _bb_rd("/d/" + sid)
+@app.route("/messages")
+def bb_messages_inbox():
+    return _bb_rd("/notifications")
+@app.route("/creply/<sid>/<rt>", methods=["POST"])
+def bb_creply(sid, rt):
+    return _bb_rd("/m/" + sid + "/" + rt)
+# ===== END BB MESSAGES OFF =====
 
 
-# ===== BB MESSAGES 2 =====
-def _bb_msg_bg(fn, *a):
-    import threading
-    threading.Thread(target=fn, args=a, daemon=True).start()
-def _bb_msg_via(x):
-    if x.get("via") == "customer":
-        return "<span style='color:#6b3fd1;font-weight:700'>&#128100; From the customer</span>"
-    ch = x.get("ch")
-    if not ch:
-        return "&#9993;&#65039; Email" if x.get("via") == "email" else "&#128241; Text from your phone"
-    lab = {"push": "&#128276; Notification", "email": "&#9993;&#65039; Email", "app": "&#128197; Updates"}
-    return " + ".join(lab[c] for c in ch if c in lab)
-def _bb_msg_deliver(d, sid, shop, b, k, em, text):
-    """Owner sends a message: Updates in the app + phone notification + email, all logged on that booking."""
-    e = lambda x: str(escape(x))
-    ch, problems = ["app"], []
-    subs = []
-    for lst in ("bookings", "cancelled", "noshows"):
-        for x in shop.get(lst) or []:
-            if isinstance(x, dict) and _bb_msg_key(x) == k:
-                subs += [p for p in x.get("push") or [] if isinstance(p, dict) and p not in subs]
-    res = {"tried": 0, "ok": 0, "err": 0, "dead": []}
-    if subs:
-        _bb_pd_tl.res = res
-        try:
-            _bb_push_send(subs, "Message from " + (shop.get("name") or "your business"), text[:180], request.host_url + "m/" + sid + "/" + str(b.get("rt")))
-            ch.append("push")
-        except Exception as ex:
-            problems.append("notification: " + str(ex))
-        finally:
-            _bb_pd_tl.res = None
-    if em:
-        try:
-            _bb_msg_send(shop, em, text)
-            ch.append("email")
-        except Exception as ex:
-            problems.append("email: " + str(ex))
-    push_failed = bool(res["tried"]) and not res["ok"]
-    if push_failed and "push" in ch:
-        ch.remove("push")
-    dead = set(res["dead"])
-    if dead:
-        for lst in ("bookings", "cancelled", "noshows"):
-            for x in shop.get(lst) or []:
-                if isinstance(x, dict) and x.get("push"):
-                    x["push"] = [q for q in x["push"] if not (isinstance(q, dict) and q.get("endpoint") in dead)]
-        if shop.get("push"):
-            shop["push"] = [q for q in shop["push"] if not (isinstance(q, dict) and q.get("endpoint") in dead)]
-    _bb_msg_log(shop, k, "app", em, text)
-    shop["msgs"][-1]["ch"] = ch
-    shop["msgs"][-1]["rt"] = str(b.get("rt") or "")
-    save(d)
-    out = "<p style='color:#1faa59'><b>&#9989; Sent:</b> " + _bb_msg_via({"ch": ch}) + "</p>"
-    if push_failed:
-        why = "their phone's notification signup has expired" if dead else "the notification service didn't answer"
-        out += ("<p id='bbpushfail' style='color:#8a6d00;background:#fff6d6;border-radius:10px;padding:8px'>&#9888;&#65039; The notification didn't go through: " + why +
-                ". They'll still see it in Updates" + (" and email" if em else "") + ". Ask them to open their booking and tap Turn on notifications again.</p>")
-    elif "push" not in ch and "email" not in ch:
-        out += "<p style='color:#8a6d00'>They haven't turned on notifications and have no email, so they'll see it in Updates next time they open the app.</p>"
-    if problems:
-        out += "<p style='color:#e23b3b'>Couldn't send " + e("; ".join(problems)) + "</p>"
-    return out
 def _bb_cu_items():
     return _bb_cu_booking_items() + _bb_closed_items()
-try:
-    _BB_JA.update({"Message from": "お店からのメッセージ："})
-except Exception:
-    pass
-# ===== END BB MESSAGES 2 =====
 
 
 # ===== BB AP MSG LINES =====
@@ -6513,7 +6357,7 @@ def _bb_pd_ask(resp):
             return resp
         ask = ("<div id='bbpushask' style='border:3px solid #ffd400;background:#fffbe6;border-radius:14px;padding:6px;margin:10px 0;color:#0b1f4d'>"
                "<div style='font-size:20px;font-weight:800;text-align:center;margin:6px'>&#128276; Get updates on your phone?</div>"
-               "<div style='text-align:center;font-size:14px;color:#556'>Get a notification if the shop messages you or your time changes.</div>" + box + "</div>")
+               "<div style='text-align:center;font-size:14px;color:#556'>Get a notification when your booking is confirmed or your time changes.</div>" + box + "</div>")
         j = h.find("</h1>")
         h = h[:j + 5] + ask + h[j + 5:] if j >= 0 else ask + h
         resp.set_data(h)
@@ -6523,23 +6367,13 @@ def _bb_pd_ask(resp):
 app.after_request_funcs.setdefault(None, []).insert(0, _bb_pd_ask)
 try:
     _BB_JA.update({"Get updates on your phone?": "スマホでお知らせを受け取りますか？",
-                   "Get a notification if the shop messages you or your time changes.": "お店からのメッセージや時間の変更をお知らせします。"})
+                   "Get a notification when your booking is confirmed or your time changes.": "予約の確定や時間の変更をお知らせします。"})
 except Exception:
     pass
 # ===== END BB PUSH DEAD =====
 
 
-# ===== BB DAY MSG LINES =====
-import html as _bb_dm_html
-def _bb_apm_last(shop, b):
-    try:
-        k, rt = _bb_msg_key(b), str(b.get("rt") or "")
-        for x in reversed(shop.get("msgs") or []):
-            if isinstance(x, dict) and x.get("via") == "app" and x.get("text") and (x.get("rt") == rt if x.get("rt") else (k and x.get("k") == k)):
-                return x
-    except Exception:
-        pass
-    return None
+# ===== BB DAY BELL =====
 def _bb_dm_pushon(shop, b):
     k = _bb_msg_key(b)
     for lst in ("bookings", "cancelled", "noshows"):
@@ -6547,152 +6381,13 @@ def _bb_dm_pushon(shop, b):
             if isinstance(x, dict) and x.get("push") and k and _bb_msg_key(x) == k:
                 return True
     return False
-def _bb_dm_line(sid, shop, b):
-    rt = str(b.get("rt") or "")
-    ms = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("via") == "app" and x.get("text") and x.get("rt") == rt]
+def _bb_dm_bell(shop, b):
     on = _bb_dm_pushon(shop, b)
-    h = ("<div class='bbdaymsg'><span class='bbdaybell' style='display:inline-block;margin:6px 6px 0 0;padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;"
-         + ("background:#e3f7ea;color:#137a3f'>&#128276; Notifications on" if on else "background:#eceff3;color:#667'>&#128277; Notifications off") + "</span>")
-    if ms:
-        x = ms[-1]
-        raw = str(x.get("text", ""))
-        t = str(escape(raw[:90])) + ("&hellip;" if len(raw) > 90 else "")
-        h += ("<a class='bbdaymsgln' href='/msg/" + sid + "?rt=" + str(escape(rt)) + "' style='display:block;margin-top:6px;background:#fff6d6;border:1px solid #f0d36b;"
-              "color:#5a4500;border-radius:10px;padding:7px 10px;text-decoration:none;font-size:14px'>&#128172; <b>" + str(len(ms)) + (" message" if len(ms) == 1 else " messages")
-              + "</b> &middot; last " + str(escape(_bb_hub_when(x.get("at") or ""))) + ": " + t + "</a>")
-    nw = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("via") == "customer" and x.get("rt") == rt and x.get("new")]
-    if nw:
-        raw = str(nw[-1].get("text", ""))
-        h += ("<a class='bbdayreply' href='/msg/" + sid + "?rt=" + str(escape(rt)) + "' style='display:block;margin-top:6px;background:#efe6ff;border:2px solid #6b3fd1;"
-                      "color:#3b1d7a;border-radius:10px;padding:7px 10px;text-decoration:none;font-size:14px'>&#128233; <b>New reply" + (" (" + str(len(nw)) + ")" if len(nw) > 1 else "")
-                      + ":</b> " + str(escape(raw[:90])) + ("&hellip;" if len(raw) > 90 else "") + "</a>")
-    return h + "</div>"
-@app.after_request
-def _bb_dm_after(resp):
-    try:
-        pp = request.path.strip("/").split("/")
-        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200 or len(pp) != 3 or pp[0] != "cday":
-            return resp
-        sid = pp[1]
-        if not _bb_sess.get("own_" + sid):
-            return resp
-        h = resp.get_data(as_text=True)
-        if "class='bbdaymsg'" in h:
-            return resp
-        shop = load().get(sid) or {}
-        byrt = {str(x.get("rt")): x for x in shop.get("bookings") or [] if isinstance(x, dict) and x.get("rt")}
-        tag = "href='/msg/" + sid + "?rt="
-        out, pos = "", 0
-        while True:
-            i = h.find(tag, pos)
-            if i < 0:
-                break
-            j, z = h.find("'", i + len(tag)), h.find("</a>", i)
-            if j < 0 or z < 0:
-                break
-            b = byrt.get(_bb_dm_html.unescape(h[i + len(tag):j]))
-            out += h[pos:z + 4]
-            pos = z + 4
-            if b:
-                out += _bb_dm_line(sid, shop, b)
-        resp.set_data(out + h[pos:])
-    except Exception as ex:
-        print("day msg lines:", ex, flush=True)
-    return resp
-# ===== END BB DAY MSG LINES =====
+    return ("<div class='bbdaymsg'><span class='bbdaybell' style='display:inline-block;margin:6px 6px 0 0;padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;"
+            + ("background:#e3f7ea;color:#137a3f'>&#128276; Notifications on" if on else "background:#eceff3;color:#667'>&#128277; Notifications off") + "</span></div>")
+# ===== END BB DAY BELL =====
 
 
-# ===== BB CUSTOMER REPLY =====
-def _bb_cr_now():
-    return datetime.utcnow() - timedelta(hours=10)
-def _bb_cr_thread(shop, rt):
-    e = lambda x: str(escape(x))
-    ms = [x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("rt") == rt and x.get("text") and x.get("via") in ("app", "customer")][-10:]
-    h = ""
-    for x in ms:
-        me = x.get("via") == "customer"
-        h += ("<div style='margin:6px 0;display:flex;justify-content:" + ("flex-end" if me else "flex-start") + "'><div style='max-width:80%;padding:8px 11px;border-radius:12px;"
-              + ("background:#efe6ff;color:#3b1d7a" if me else "background:#fff6d6;color:#5a4500") + "'><div style='font-size:12px;opacity:.75'>"
-              + ("You" if me else e(shop.get("name", ""))) + " &middot; " + e(_bb_hub_when(x.get("at") or "")) + "</div>" + e(x.get("text", "")) + "</div></div>")
-    return h
-def _bb_cr_box(sid, rt, shop, sent):
-    note = ""
-    if sent == "1":
-        note = "<p style='color:#1faa59;font-weight:700'>&#9989; Sent to " + str(escape(shop.get("name", ""))) + "</p>"
-    elif sent == "limit":
-        note = "<p style='color:#e23b3b;font-weight:700'>You've sent a lot of messages. Please wait a bit, or call the shop.</p>"
-    return ("<div class='card' id='bbcmsg' style='text-align:left'><b>&#128172; Messages with " + str(escape(shop.get("name", ""))) + "</b>" + _bb_cr_thread(shop, rt) + note
-            + "<form method='post' action='/creply/" + sid + "/" + str(escape(rt)) + "'><textarea name='text' maxlength='500' rows='3' required placeholder='Write to the shop...' "
-            "style='width:100%;box-sizing:border-box;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #d7e0f0;font-size:16px'></textarea>"
-            "<button>&#128172; Message the shop</button></form></div>")
-@app.route("/creply/<sid>/<rt>", methods=["POST"])
-def bb_creply(sid, rt):
-    d = load()
-    shop = d.get(sid)
-    b = _bb_msg_find(shop, rt=rt) if isinstance(shop, dict) else None
-    if not b:
-        return S + "<h1>Booking not found</h1>", 404
-    back = "/m/" + sid + "/" + rt
-    text = (request.form.get("text") or "").strip()[:500]
-    if not text:
-        return _bb_rd(back + "#bbcmsg")
-    cut = (_bb_cr_now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
-    if len([x for x in shop.get("msgs") or [] if isinstance(x, dict) and x.get("via") == "customer" and x.get("rt") == rt and (x.get("at") or "") >= cut]) >= 5:
-        return _bb_rd(back + "?sent=limit#bbcmsg")
-    shop.setdefault("msgs", []).append({"k": _bb_msg_key(b), "via": "customer", "rt": rt, "to": shop.get("email") or "", "text": text,
-                                        "at": _bb_cr_now().strftime("%Y-%m-%d %H:%M"), "new": True})
-    shop["msgs"] = shop["msgs"][-500:]
-    save(d)
-    who = b.get("name") or "A customer"
-    link = request.host_url + "msg/" + sid + "?rt=" + rt
-    try:
-        if shop.get("push"):
-            _bb_msg_bg(_bb_push_send, list(shop["push"]), "Message from " + who, text[:180], link)
-    except Exception as ex:
-        print("reply push:", ex, flush=True)
-    try:
-        if shop.get("email"):
-            pl = {"from": "Business-Bookie <bookings@business-bookie.com>", "to": [shop["email"]], "subject": "New message from " + who,
-                  "text": who + " wrote:\n\n" + text + "\n\nReply here: " + link}
-            if (b.get("email") or "").strip():
-                pl["reply_to"] = b["email"].strip()
-            _bb_msg_bg(_bb_msg_mail, pl)
-    except Exception as ex:
-        print("reply email:", ex, flush=True)
-    return _bb_rd(back + "?sent=1#bbcmsg")
-def _bb_cr_after(resp):
-    try:
-        pp = request.path.strip("/").split("/")
-        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
-            return resp
-        if len(pp) == 3 and pp[0] == "m":
-            h = resp.get_data(as_text=True)
-            if "id='bbcmsg'" in h:
-                return resp
-            shop = load().get(pp[1])
-            if not isinstance(shop, dict) or not _bb_msg_find(shop, rt=pp[2]):
-                return resp
-            box = _bb_cr_box(pp[1], pp[2], shop, request.args.get("sent") or "")
-            i = h.rfind("</body>")
-            resp.set_data(h[:i] + box + h[i:] if i >= 0 else h + box)
-        elif len(pp) == 2 and pp[0] == "msg" and _bb_sess.get("own_" + pp[1]):
-            d = load()
-            shop = d.get(pp[1]) or {}
-            rt, k = request.args.get("rt"), request.args.get("k")
-            b = _bb_msg_find(shop, rt=rt) if rt else None
-            kk = _bb_msg_key(b) if b else (k or "")
-            ch = False
-            for x in shop.get("msgs") or []:
-                if isinstance(x, dict) and x.get("via") == "customer" and x.get("new") and kk and x.get("k") == kk:
-                    x["new"] = False
-                    ch = True
-            if ch:
-                save(d)
-    except Exception as ex:
-        print("customer reply page:", ex, flush=True)
-    return resp
-app.after_request_funcs.setdefault(None, []).insert(0, _bb_cr_after)
-# ===== END BB CUSTOMER REPLY =====
 # ===== BB LOGIN APPTS =====
 def _bb_ap_get():
     out = _bb_ap_cookie_pairs()
@@ -6826,12 +6521,6 @@ except Exception:
 
 
 # ===== BB OWNER ALERTS =====
-def _bb_al_unread(shop):
-    last = {}
-    for x in shop.get("msgs") or []:
-        if isinstance(x, dict) and x.get("via") == "customer" and x.get("new") and x.get("rt"):
-            last[x["rt"]] = x
-    return last
 def _bb_al_bar(sid, shop):
     e = lambda v: str(escape(str(v)))
     now = datetime.utcnow() - timedelta(hours=10)
@@ -6840,11 +6529,6 @@ def _bb_al_bar(sid, shop):
     row = lambda href, bg, bd, col, html: ("<a href='" + href + "' style='display:block;margin:0 0 8px;padding:11px 13px;border-radius:12px;text-decoration:none;font-size:15px;"
                                            "background:" + bg + ";border:2px solid " + bd + ";color:" + col + ";text-align:left'>" + html + " <b style='float:right'>&rsaquo;</b></a>")
     out = ""
-    for rt, x in _bb_al_unread(shop).items():
-        b = _bb_msg_find(shop, rt=rt) or {}
-        raw = str(x.get("text", ""))
-        out += row("/msg/" + sid + "?rt=" + e(rt), "#efe6ff", "#6b3fd1", "#3b1d7a", "&#128233; <b>New message from " + e(b.get("name") or "a customer") + ":</b> "
-                   + e(raw[:70]) + ("&hellip;" if len(raw) > 70 else ""))
     bk = [b for b in shop.get("bookings") or [] if isinstance(b, dict) and b.get("rt")]
     due = sorted(b.get("when") or "" for b in bk if not b.get("done") and old <= (b.get("when") or "")[:10] and (b.get("when") or "") <= nows)
     if due:
@@ -6854,25 +6538,6 @@ def _bb_al_bar(sid, shop):
     if nt:
         out += row("/cday/" + sid + "/" + today, "#eef3ff", "#1a6dff", "#0b1f4d", "&#128197; <b>" + str(nt) + (" appointment" if nt == 1 else " appointments") + " today</b>")
     return ("<div id='bbalerts' style='margin:4px 0 12px'>" + out + "</div>") if out else ""
-def _bb_al_after(resp):
-    try:
-        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
-            return resp
-        if request.path == "/mine":
-            h = resp.get_data(as_text=True)
-            d = load()
-            for sid in _bb_oh_owned():
-                shop = d.get(sid)
-                n = len(_bb_al_unread(shop)) if isinstance(shop, dict) else 0
-                tag = "<b style='font-size:18px'>" + str(escape(shop.get("name", ""))) + "</b>" if n else ""
-                if n and tag in h:
-                    h = h.replace(tag, tag + " <a class='bbalbadge' href='/d/" + sid + "' style='background:#6b3fd1;color:#fff;border-radius:999px;padding:2px 9px;"
-                                  "font-size:13px;font-weight:800;text-decoration:none'>&#128233; " + str(n) + "</a>", 1)
-            resp.set_data(h)
-    except Exception as ex:
-        print("owner alerts:", ex, flush=True)
-    return resp
-app.after_request_funcs.setdefault(None, []).insert(0, _bb_al_after)
 # ===== END BB OWNER ALERTS =====
 
 
