@@ -567,7 +567,11 @@ def _bb_manage(sid, rt):
             try:
                 stripe.Refund.create(**kw)
             except Exception as e:
-                return S + head + "<p>Refund failed: " + str(escape(str(e))) + "</p>"
+                if not _bb_rs_skip(e):
+                    return S + head + "<p>Refund failed: " + str(escape(str(e))) + "</p><p>Please contact the business.</p>"
+                b["refund_note"] = "nothing to refund: " + str(e)[:120]
+                if "already" not in str(e).lower():
+                    amt = 0
         _bb_cx_fee(shop, sid, b, total, amt)
         b["refund"] = amt / 100
         b["cancelled_at"] = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
@@ -821,6 +825,9 @@ def _bb_db():
 def load():
     if not os.environ.get("DATABASE_URL"):
         return _bb_fload()
+    _rl = globals().get("_bb_rows_load")
+    if _rl and not os.environ.get("BB_ROWS_OFF"):
+        return _rl()
     c = _bb_db()
     try:
         r = c.run("SELECT v FROM bb_kv WHERE k IN (:k, 'shops') ORDER BY (k = :k) DESC LIMIT 1", k=_bb_dbkey())
@@ -837,6 +844,9 @@ def load():
 def save(d):
     if not os.environ.get("DATABASE_URL"):
         return _bb_fsave(d)
+    _rs = globals().get("_bb_rows_save")
+    if _rs and not os.environ.get("BB_ROWS_OFF"):
+        return _rs(d)
     c = _bb_db()
     try:
         c.run("INSERT INTO bb_kv (k, v) VALUES (:k, :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", k=_bb_dbkey(), v=json.dumps(d))
@@ -885,8 +895,10 @@ def _bb_delete(sid):
                 try:
                     stripe.Refund.create(**kw)
                 except Exception as e:
-                    save(d)
-                    return S + "<h1>Refund failed</h1><p>" + str(escape(str(e))) + "</p><p>Your business was NOT deleted.</p><a href='/d/" + sid + "'>Back</a>"
+                    _r = _bb_rs_del_fail(e, b, sid)
+                    if _r is not None:
+                        save(d)
+                        return _r
                 b["full_refund"] = True
         for b in up:
             if b.get("email"):
@@ -6815,6 +6827,233 @@ def _bb_ap_get():
         print("login appts:", ex, flush=True)
     return out
 # ===== END BB LOGIN APPTS =====
+
+
+# ===== BB REFUND SKIP =====
+def _bb_rs_skip(e):
+    t = str(e).lower()
+    return any(w in t for w in ("no such payment_intent", "resource_missing", "already been refunded", "already refunded", "charge_already_refunded"))
+def _bb_rs_del_fail(e, b, sid):
+    if _bb_rs_skip(e):
+        b["refund_note"] = "nothing to refund: " + str(e)[:120]
+        return None
+    if request.form.get("force") == "1":
+        b["refund_manual"] = True
+        return None
+    x = lambda v: str(escape(str(v)))
+    return (S + "<h1>Refund failed</h1><p>Stripe couldn't refund <b>" + x(b.get("name", "")) + "</b> (" + x(b.get("service", "")) + ", " + x(b.get("when", "")) + "):</p>"
+            "<p style='color:#e23b3b'>" + x(e) + "</p><p>Your business was NOT deleted yet.</p>"
+            "<form method='post' action='/del/" + sid + "'><input type='hidden' name='force' value='1'>"
+            "<input name='pw' type='password' placeholder='Type your password again' required>"
+            "<button style='background:#e23b3b'>Delete anyway, I'll refund this customer myself</button></form><a href='/d/" + sid + "'>Back</a>")
+# ===== END BB REFUND SKIP =====
+
+
+# ===== BB ROWS =====
+import threading as _bb_rw_th
+_bb_rw_tl = _bb_rw_th.local()
+class _BBStore(dict):
+    pass
+def _bb_rows_conn():
+    c = _bb_db()
+    c.run("CREATE TABLE IF NOT EXISTS bb_rows (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+    return c
+def _bb_rows_load():
+    c = _bb_rows_conn()
+    try:
+        rows = c.run("SELECT k, v FROM bb_rows")
+        kv = c.run("SELECT md5(v) FROM bb_kv WHERE k IN (:k, 'shops') ORDER BY (k = :k) DESC LIMIT 1", k=_bb_dbkey())
+        cur = kv[0][0] if kv else ""
+        meta = dict(rows).get("__kvsum", "")
+        if not rows or (cur and cur != meta):
+            if cur:
+                old = json.loads(c.run("SELECT v FROM bb_kv WHERE k IN (:k, 'shops') ORDER BY (k = :k) DESC LIMIT 1", k=_bb_dbkey())[0][0])
+            else:
+                try:
+                    old = _bb_fload()
+                except Exception:
+                    old = {}
+            c.run("DELETE FROM bb_rows")
+            for k, v in (old or {}).items():
+                c.run("INSERT INTO bb_rows (k, v) VALUES (:k, :v) ON CONFLICT (k) DO NOTHING", k=str(k), v=json.dumps(v))
+            c.run("INSERT INTO bb_rows (k, v) VALUES ('__kvsum', :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", v=cur)
+            rows = c.run("SELECT k, v FROM bb_rows")
+    finally:
+        c.close()
+    rows = [(k, v) for k, v in rows if not str(k).startswith("__")]
+    snap = {k: v for k, v in rows}
+    d = _BBStore((k, json.loads(v)) for k, v in rows)
+    d._snap = snap
+    _bb_rw_tl.snap = snap
+    return d
+def _bb_rows_save(d):
+    snap = getattr(d, "_snap", None)
+    if snap is None:
+        snap = getattr(_bb_rw_tl, "snap", None)
+    c = _bb_rows_conn()
+    try:
+        if snap is None:
+            snap = {k: v for k, v in c.run("SELECT k, v FROM bb_rows") if not str(k).startswith("__")}
+        new = {str(k): json.dumps(v) for k, v in d.items() if not str(k).startswith("__")}
+        for k, v in new.items():
+            if snap.get(k) != v:
+                c.run("INSERT INTO bb_rows (k, v) VALUES (:k, :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", k=k, v=v)
+        for k in list(snap):
+            if k not in new:
+                c.run("DELETE FROM bb_rows WHERE k = :k", k=k)
+    finally:
+        c.close()
+# ===== END BB ROWS =====
+
+
+# ===== BB SEPARATE ROOMS =====
+def _bb_sep_noop(resp):
+    return resp
+def _bb_sep_mine(resp):
+    try:
+        if request.method != "GET" or request.path != "/mine" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        if not _bb_oh_owned():
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbmineap'" in h:
+            return resp
+        n = len(_bb_ap_list(_bb_ap_get()))
+        btn = ("<a id='bbmineap' href='/appointments' style='display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eef3ff;border-radius:14px;"
+               "padding:14px;margin:12px 0;color:#0b1f4d;text-decoration:none;text-align:left'><span><b style='font-size:17px'>&#128197; My personal appointments</b><br>"
+               "<span style='font-size:13px;color:#556'>Places you booked as a customer" + (" &middot; <b>" + str(n) + " upcoming</b>" if n else "") + "</span></span>"
+               "<span style='font-size:28px;color:#1a6dff;font-weight:800'>&rsaquo;</span></a>")
+        w = h.find("<div class='wrap'>")
+        h = h[:w + 18] + btn + h[w + 18:] if w >= 0 else btn + h
+        resp.set_data(h)
+    except Exception as ex:
+        print("my appts button:", ex, flush=True)
+    return resp
+def _bb_sep_back(resp):
+    try:
+        if request.method != "GET" or request.path != "/appointments" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        own = _bb_oh_owned()
+        if not own:
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbsepback'" in h:
+            return resp
+        em = ((load().get(own[0]) or {}).get("email") or "")
+        back = ("<a id='bbsepback' href='/mine?em=" + _bb_oh_q(em) + "' style='display:inline-block;margin:6px 0 4px;padding:8px 14px;border:2px solid #1a6dff;"
+                "border-radius:10px;color:#1a6dff;text-decoration:none;font-weight:700'>&#8592; &#127970; Back to my businesses</a>")
+        i = h.find("<h1")
+        h = h[:i] + back + h[i:] if i >= 0 else back + h
+        resp.set_data(h)
+    except Exception as ex:
+        print("back button:", ex, flush=True)
+    return resp
+_bb_sep_L = app.after_request_funcs.setdefault(None, [])
+for _i, _f in enumerate(list(_bb_sep_L)):
+    if _f is _bb_oh_after:
+        _bb_sep_L[_i] = _bb_sep_noop
+    elif _f is _bb_mine_ap_after:
+        _bb_sep_L[_i] = _bb_sep_mine
+_bb_sep_L.append(_bb_sep_back)
+# ===== END BB SEPARATE ROOMS =====
+
+
+# ===== BB HOME FOUR =====
+def _bb_h4_btn(href, icon, label):
+    return ("<a href='" + href + "' style='display:flex;align-items:center;gap:10px;box-sizing:border-box;width:100%;margin:0 0 10px;padding:14px 16px;background:#fff;"
+            "color:#1a6dff;border-radius:14px;font-weight:800;font-size:18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.15)'>"
+            "<span style='font-size:22px'>" + icon + "</span><span>" + label + "</span><span style='margin-left:auto;font-size:24px'>&rsaquo;</span></a>")
+def _bb_h4_block():
+    sec = "<div style='color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px;margin:14px 2px 8px;text-transform:uppercase;opacity:.95'>"
+    return ("<div style='margin:18px 0 6px'><div id='bbhome4' style='width:100%;max-width:360px;margin:0 auto;text-align:left'>"
+            + sec + "<span>For customers</span></div>"
+            + _bb_h4_btn("/appointments", "&#128197;", "Check my bookings") + _bb_h4_btn("/find", "&#128269;", "Book an appointment")
+            + sec + "<span>For owners</span></div>"
+            + _bb_h4_btn("/new", "&#127970;", "Sign up a business") + _bb_h4_btn("/login", "&#128273;", "Log in to my business")
+            + "</div></div>")
+def _bb_h4_after(resp):
+    try:
+        if request.method != "GET" or request.path != "/" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbhome4'" in h:
+            return resp
+        a = h.find("<div style='margin:18px 0 6px'>")
+        end = "Log in to check bookings</a></div>"
+        z = h.find(end, a) if a >= 0 else -1
+        if z < 0:
+            return resp
+        resp.set_data(h[:a] + _bb_h4_block() + h[z + len(end):])
+    except Exception as ex:
+        print("home four:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).append(_bb_h4_after)
+try:
+    _BB_JA.update({"For owners": "オーナー様", "Check my bookings": "予約を確認する", "Sign up a business": "お店を登録する", "Log in to my business": "お店にログイン"})
+except Exception:
+    pass
+# ===== END BB HOME FOUR =====
+
+
+# ===== BB OWNER ALERTS =====
+def _bb_al_unread(shop):
+    last = {}
+    for x in shop.get("msgs") or []:
+        if isinstance(x, dict) and x.get("via") == "customer" and x.get("new") and x.get("rt"):
+            last[x["rt"]] = x
+    return last
+def _bb_al_bar(sid, shop):
+    e = lambda v: str(escape(str(v)))
+    now = datetime.utcnow() - timedelta(hours=10)
+    today, nows = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d %H:%M")
+    old = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+    row = lambda href, bg, bd, col, html: ("<a href='" + href + "' style='display:block;margin:0 0 8px;padding:11px 13px;border-radius:12px;text-decoration:none;font-size:15px;"
+                                           "background:" + bg + ";border:2px solid " + bd + ";color:" + col + ";text-align:left'>" + html + " <b style='float:right'>&rsaquo;</b></a>")
+    out = ""
+    for rt, x in _bb_al_unread(shop).items():
+        b = _bb_msg_find(shop, rt=rt) or {}
+        raw = str(x.get("text", ""))
+        out += row("/msg/" + sid + "?rt=" + e(rt), "#efe6ff", "#6b3fd1", "#3b1d7a", "&#128233; <b>New message from " + e(b.get("name") or "a customer") + ":</b> "
+                   + e(raw[:70]) + ("&hellip;" if len(raw) > 70 else ""))
+    bk = [b for b in shop.get("bookings") or [] if isinstance(b, dict) and b.get("rt")]
+    due = sorted(b.get("when") or "" for b in bk if not b.get("done") and old <= (b.get("when") or "")[:10] and (b.get("when") or "") <= nows)
+    if due:
+        out += row("/cday/" + sid + "/" + due[0][:10], "#fff6d6", "#f0d36b", "#5a4500", "&#9888;&#65039; <b>" + str(len(due)) + (" appointment needs" if len(due) == 1 else " appointments need")
+                   + " attention</b> &middot; did they show up?")
+    nt = len([b for b in bk if (b.get("when") or "")[:10] == today])
+    if nt:
+        out += row("/cday/" + sid + "/" + today, "#eef3ff", "#1a6dff", "#0b1f4d", "&#128197; <b>" + str(nt) + (" appointment" if nt == 1 else " appointments") + " today</b>")
+    return ("<div id='bbalerts' style='margin:4px 0 12px'>" + out + "</div>") if out else ""
+def _bb_al_after(resp):
+    try:
+        if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
+            return resp
+        pp = request.path.strip("/").split("/")
+        if len(pp) == 2 and pp[0] == "d" and _bb_sess.get("own_" + pp[1]):
+            h = resp.get_data(as_text=True)
+            shop = load().get(pp[1])
+            if "id='bbalerts'" in h or not isinstance(shop, dict):
+                return resp
+            bar = _bb_al_bar(pp[1], shop)
+            w = h.find("<div class='wrap'>")
+            if bar and w >= 0:
+                resp.set_data(h[:w + 18] + bar + h[w + 18:])
+        elif request.path == "/mine":
+            h = resp.get_data(as_text=True)
+            d = load()
+            for sid in _bb_oh_owned():
+                shop = d.get(sid)
+                n = len(_bb_al_unread(shop)) if isinstance(shop, dict) else 0
+                tag = "<b style='font-size:18px'>" + str(escape(shop.get("name", ""))) + "</b>" if n else ""
+                if n and tag in h:
+                    h = h.replace(tag, tag + " <a class='bbalbadge' href='/d/" + sid + "' style='background:#6b3fd1;color:#fff;border-radius:999px;padding:2px 9px;"
+                                  "font-size:13px;font-weight:800;text-decoration:none'>&#128233; " + str(n) + "</a>", 1)
+            resp.set_data(h)
+    except Exception as ex:
+        print("owner alerts:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_al_after)
+# ===== END BB OWNER ALERTS =====
 
 import os
 if __name__ == "__main__":
