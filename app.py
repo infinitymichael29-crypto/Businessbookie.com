@@ -259,6 +259,16 @@ def dash(sid):
     else:
         pay = "<div class='card'><b>Get paid online</b><br>Connect your bank so customers can pay when they book. Takes a few minutes.<a style='" + cb + "' href='/connect/" + sid + pq + "'>Connect payments</a></div>"
     body = ref + head + "<div class='top' style='text-align:center;position:relative;padding-top:56px'><a href='/mine?em=" + quote(shop.get('email','')) + "' style='position:absolute;top:14px;left:14px;background:#fff;color:#1a6dff;font-weight:700;text-decoration:none;padding:8px 14px;border-radius:8px'>&#127970; All my businesses</a><h1>" + escape(shop['name']) + "</h1></div><div class='wrap'>" + _bb_al_bar(sid, shop) + _bb_cal2(shop, sid, _due) + note + toprows + _bb_fc_btn(sid) + "<div class='card'><div class='big'>" + str(len(bk)) + "</div>total bookings</div><div class='card'><b>Your booking link</b><br><a href='/b/" + sid + "'>" + escape(link) + "</a><br><button onclick=\"if(navigator.share){navigator.share({title:'Book with us',url:'" + link + "'})}else{navigator.clipboard.writeText('" + link + "');this.innerText='Copied!'}\" style='margin-top:10px'>Share link</button></div><div class='card'><b>Open:</b> " + escape(hrs) + "</div><div class='card' style='display:flex;gap:10px;flex-wrap:wrap'><a href='/edit/" + sid + "' style='flex:1;min-width:40%;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#9999;&#65039; Edit customer booking page</a><a href='/block/" + sid + "' style='flex:1;min-width:40%;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#9940; Block off time</a><a href='/del/" + sid + "' style='flex-basis:100%;text-align:center;border:2px solid #e23b3b;color:#e23b3b;padding:10px;border-radius:10px;text-decoration:none;font-weight:700;margin-top:6px'>Delete business</a></div>" + pay + rows + "<div class='card'><a href='/pw/" + sid + "'>Change password</a> | <a href='/logout'>Log out</a></div></div>"
+    if request.method == "GET":
+        try:
+            nows = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")
+            old = d[sid].get("owner_seen")
+            if not old or old < (datetime.utcnow() - timedelta(hours=10, minutes=10)).strftime("%Y-%m-%d %H:%M:%S"):
+                d[sid]["owner_prev"] = old or nows
+            d[sid]["owner_seen"] = nows
+            save(d)
+        except Exception as ex:
+            print("owner seen:", ex, flush=True)
     return body.replace("<", chr(60)).replace(">", chr(62))
 
 import smtplib
@@ -371,12 +381,15 @@ def mine():
         up = len([b for b in bk if str(b.get("when", "")) >= _now])
         ok = _bb_listed(v)
         tag = "<span style='color:#1faa59;font-weight:700'>&#9679; Live</span>" if ok else ("<span style='color:#b37400;font-weight:700'>&#9888; Needs email confirmation</span>" if not v.get("live", True) else "<span style='color:#b37400;font-weight:700'>&#9888; Needs payments connected</span>")
-        return "<div class='card' style='border-left:6px solid " + ("#1faa59" if ok else "#f0a500;background:#fff8e1") + "'><b style='font-size:18px'>" + escape(v.get("name", "")) + "</b> " + tag + "<br><span style='color:#667'>" + escape(v.get("type", "")) + "</span><div style='display:flex;gap:24px;margin:10px 0'><div><div style='" + _num + "'>" + str(up) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(len(bk)) + "</div>total bookings</div></div><div style='display:flex;gap:8px'><a style='" + _bs + "' href='/d/" + sid + "?pw=" + quote(pw) + "'>Open</a></div></div>"
+        nn = len(_bb_own_new(v))
+        pill = ("<span class='bbownnew' style='display:inline-block;min-width:20px;text-align:center;background:#e23b3b;color:#fff;border-radius:999px;font-size:13px;"
+                "font-weight:800;padding:1px 7px;margin-left:4px;vertical-align:middle'>" + str(min(nn, 99)) + "</span> ") if nn else ""
+        return "<div class='card' style='border-left:6px solid " + ("#1faa59" if ok else "#f0a500;background:#fff8e1") + "'><b style='font-size:18px'>" + escape(v.get("name", "")) + "</b> " + pill + tag + "<br><span style='color:#667'>" + escape(v.get("type", "")) + "</span><div style='display:flex;gap:24px;margin:10px 0'><div><div style='" + _num + "'>" + str(up) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(len(bk)) + "</div>total bookings</div></div><div style='display:flex;gap:8px'><a style='" + _bs + "' href='/d/" + sid + "?pw=" + quote(pw) + "'>Open</a></div></div>"
     rows = "".join(_card(sid, v) for sid, v in owned)
     _tu = sum(len([b for b in v.get("bookings", []) if str(b.get("when", "")) >= _now]) for _, v in owned)
     _tb = sum(len(v.get("bookings", [])) for _, v in owned)
     summ = "<div class='card' style='display:flex;justify-content:space-around;text-align:center'><div><div style='" + _num + "'>" + str(len(owned)) + "</div>businesses</div><div><div style='" + _num + "'>" + str(_tu) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(_tb) + "</div>total bookings</div></div>"
-    return head + "<div class='top' style='text-align:center'><h1>My businesses</h1></div><div class='wrap'>" + summ + rows + "<div style='display:flex;gap:10px;margin-top:12px'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/find' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#128269; Find / book a business</a></div><p style='text-align:center'><a href='/logout'>Log out</a></p></div>"
+    return head + "<div class='top' style='text-align:center'><h1>My businesses</h1></div><div class='wrap'>" + _bb_mine_btn() + summ + rows + "<div style='display:flex;gap:10px;margin-top:12px'><a href='/new' style='flex:1;text-align:center;background:#1a6dff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;font-weight:700'>+ Add another business</a><a href='/find' style='flex:1;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#128269; Find / book a business</a></div><p style='text-align:center'><a href='/logout'>Log out</a></p></div>"
 
 
 import os, secrets as _bb_secrets
@@ -505,6 +518,79 @@ def paid(sid):
     return S + "<h1>You're booked and paid!</h1><p>" + str(escape(m["service"])) + " at " + str(escape(shop["name"])) + "</p><p>Booking fee paid: $" + ("%.2f" % fee) + ". The business has been notified.</p><p style='background:#eef3ff;border-radius:10px;padding:12px'>&#9993; We emailed your confirmation to <b>" + str(escape(m.get("email", ""))) + "</b>. It has your link to <b>reschedule or cancel</b>. Check your spam folder if you don't see it.</p><p><b>Need to cancel or reschedule? Save this link:</b><br><a href='/m/" + sid + "/" + rt + "'>" + request.host_url + "m/" + sid + "/" + rt + "</a></p><p><b>After your appointment, leave a review here (save this link):</b><br><a href='/r/" + sid + "/" + rt + "'>" + request.host_url + "r/" + sid + "/" + rt + "</a></p><a href='/b/" + sid + "'>Back</a>"
 
 
+try:
+    _BB_JA.update({"Your appointment": "ご予約内容", "When:": "日時：", "Paid:": "お支払い："})
+except Exception:
+    pass
+def _bb_m_updates(sid, rt):
+    """This booking's notifications, newest last, shown at the top of its page. Returns (html, keys)."""
+    try:
+        items = _bb_cu_booking_items([(sid, rt)])
+    except Exception as ex:
+        print("booking updates:", ex, flush=True)
+        return "", []
+    if not items:
+        return "", []
+    st = _bb_nt_state()
+    read = st[1]
+    rows = ""
+    for k, col, icon, lab, sub, when, link, w in reversed(items):
+        fg, bg = _BB_CU_STY[col]
+        new = k not in read
+        rows += ("<div style='display:flex;gap:8px;align-items:center;margin:6px 0;padding:8px 10px;border-radius:10px;border-left:5px solid " + fg + ";background:" + bg + "'>"
+                 "<span style='font-size:18px'>" + icon + "</span><span>" + ("<b>" + lab + "</b>" if new else lab)
+                 + (" <span class='bbntdot' style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#1a6dff;margin-left:4px'></span>" if new else "")
+                 + "</span></div>")
+    html = ("<div class='card' id='bbbkupd' style='text-align:left'><b style='font-size:17px'>&#128276; <span>Updates</span></b>" + rows + "</div>")
+    return html, list(st[1]) + [i[0] for i in items]
+
+
+def _bb_m_page(sid, rt, top, body, info=""):
+    """Customer booking page, built in one place: heading, updates, booking info, business info, body, bottom buttons."""
+    from flask import make_response
+    shop = load().get(sid) or {}
+    b = next((x for x in shop.get("bookings", []) if x.get("rt") == rt), None)
+    e = lambda v: str(escape(v))
+    first, mark = "", None
+    if request.method == "GET" and top == "<h1>Your booking</h1>":
+        upd, mark = _bb_m_updates(sid, rt)
+        first += upd
+    if request.method == "GET" and b:
+        if b.get("prop"):
+            first += ("<div class='card' style='background:#fff6e5;border-left:6px solid #f0a500'><b>&#9203; Time change pending</b><br>" +
+                      ("The business suggested " if b["prop"].get("by") == "owner" else "You suggested ") + e(_bb_fmt(b["prop"]["when"])) +
+                      "<br><a href='/neg/" + sid + "/" + rt + "?as=c' style='font-weight:700'>Respond / view</a></div>")
+        bits = ""
+        if b.get("staff") and _bb_staff_name(shop, b["staff"]):
+            bits += "<b>With:</b> " + e(_bb_staff_name(shop, b["staff"])) + "<br>"
+        if b.get("note"):
+            bits += "<b>Your note:</b> " + e(b["note"])
+        if bits:
+            info += "<p id='bbwith'>" + bits + "</p>"
+    if info:
+        first += ("<div class='card' id='bbbkinfo' style='text-align:left'><b style='font-size:17px'>&#128197; <span>Your appointment</span></b>" + info + "</div>"
+                  "<div class='card' id='bbbizinfo' style='text-align:left'><b style='font-size:17px'>&#127970; " + e(shop.get("name", "")) + "</b>"
+                  + _bb_call_btn(shop) + _bb_dir_btn(shop) + "</div>")
+    else:
+        first += _bb_dir_btn(shop)
+    sty = "display:block;text-align:center;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;margin:10px 0;"
+    end = "<div id='bbhomebtn' style='margin:18px 0'>"
+    if _bb_sess.get("own_" + sid):
+        end += "<a href='/d/" + sid + "' style='" + sty + "background:#1a6dff;color:#fff'>&#128200; Back to my dashboard</a>"
+    end += ("<a href='/?home=1' style='" + sty + "border:2px solid #1a6dff;color:#1a6dff;background:#fff'>&#127968; Home</a>"
+            "<a href='/find' style='" + sty + "border:2px solid #1a6dff;color:#1a6dff;background:#fff'>&#128269; Book another business</a></div>")
+    if request.method == "GET" and top == "<h1>Your booking</h1>":
+        end += ("<a id='bbhub' href='/my/" + sid + "/" + rt + "' style='display:block;text-align:center;padding:13px;margin:12px 0;"
+                "border:2px solid #1a6dff;border-radius:12px;text-decoration:none;font-weight:800'>&#128203; All my bookings + my QR code</a>")
+    end += _bb_cal_box(sid, rt)
+    if os.environ.get("VAPID_PUBLIC"):
+        end += _bb_push_box(sid, rt, "customer")
+    resp = make_response(S + top + first + body + end)
+    if mark:
+        _bb_ck_put(resp, "bbntread", mark)
+    return resp
+
+
 @app.route("/m/<sid>/<rt>", methods=["GET", "POST"])
 def _bb_manage(sid, rt):
     d = load()
@@ -515,7 +601,7 @@ def _bb_manage(sid, rt):
     if b is None:
         c = next((x for x in shop.get("cancelled", []) if x.get("rt") == rt), None)
         if c:
-            return S + "<h1>This booking was cancelled</h1><p>Refund: $" + ("%.2f" % (c.get("refund") or 0)) + "</p><a href='/b/" + sid + "'>Book again</a>"
+            return _bb_m_page(sid, rt, "<h1>This booking was cancelled</h1>", "<p>Refund: $" + ("%.2f" % (c.get("refund") or 0)) + "</p><a href='/b/" + sid + "'>Book again</a>")
         return S + "<h1>Booking not found</h1>", 404
     total = int(round(float(b.get("fee") or 0) * 100))
     keep = b.get("keep")
@@ -527,12 +613,14 @@ def _bb_manage(sid, rt):
         started = datetime.strptime(b.get("when", ""), "%Y-%m-%d %H:%M") <= (datetime.utcnow() - timedelta(hours=10))
     except Exception:
         started = False
-    head = "<h1>Your booking</h1><p><b>" + str(escape(b.get("service", ""))) + "</b> at " + str(escape(shop["name"])) + "</p><p>When: " + str(escape(b.get("when", ""))) + "</p><p>Paid: $" + ("%.2f" % (total / 100)) + "</p>" + _bb_call_btn(shop)
+    top = "<h1>Your booking</h1>"
+    head = ""
+    info = "<p><b>" + str(escape(b.get("service", ""))) + "</b> at " + str(escape(shop["name"])) + "</p><p><span>When:</span> " + str(escape(_bb_hub_when(b.get("when", "")))) + "</p><p><span>Paid:</span> $" + ("%.2f" % (total / 100)) + "</p>"
     if started:
-        return S + head + "<p>This appointment has already started, so it can't be changed online. Please contact the business.</p>"
+        return _bb_m_page(sid, rt, top, head + "<p>This appointment has already started, so it can't be changed online. Please contact the business.</p>", info)
     if request.method == "POST" and request.form.get("act") == "cancel":
         if total and not b.get("pi"):
-            return S + head + "<p>Online refunds aren't available for this booking. Please contact the business.</p>"
+            return _bb_m_page(sid, rt, top, head + "<p>Online refunds aren't available for this booking. Please contact the business.</p>", info)
         if b.get("pi") and amt > 0:
             import stripe
             stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
@@ -545,7 +633,7 @@ def _bb_manage(sid, rt):
                 stripe.Refund.create(**kw)
             except Exception as e:
                 if not _bb_rs_skip(e):
-                    return S + head + "<p>Refund failed: " + str(escape(str(e))) + "</p><p>Please contact the business.</p>"
+                    return _bb_m_page(sid, rt, top, head + "<p>Refund failed: " + str(escape(str(e))) + "</p><p>Please contact the business.</p>", info)
                 b["refund_note"] = "nothing to refund: " + str(e)[:120]
                 if "already" not in str(e).lower():
                     amt = 0
@@ -561,12 +649,12 @@ def _bb_manage(sid, rt):
                 notify("Your booking at " + shop["name"] + " is cancelled", "Hi " + b.get("name", "") + ",\n\nYour " + b.get("service", "") + " at " + shop["name"] + " on " + b.get("when", "") + " has been cancelled.\n\nRefund: $" + amt_s + ". It can take 5 to 10 business days to show on your card.\n\nWant to book again? " + request.host_url + "b/" + sid, b["email"])
         except Exception:
             pass
-        return S + "<h1>Booking cancelled</h1><p>You'll be refunded $" + amt_s + ". It can take 5 to 10 business days to show on your card.</p><a href='/b/" + sid + "'>Back</a>"
+        return _bb_m_page(sid, rt, "<h1>Booking cancelled</h1>", "<p>You'll be refunded $" + amt_s + ". It can take 5 to 10 business days to show on your card.</p><a href='/b/" + sid + "'>Back</a>")
     sl = [(v, lab) for v, lab in build_slots(shop) if v != b.get("when")]
     if request.method == "POST" and request.form.get("act") == "resched":
         nw = request.form.get("when", "")
         if nw not in [v for v, _ in sl]:
-            return S + head + "<p>That time isn't available anymore. Please pick another.</p><a href='/m/" + sid + "/" + rt + "'>Back</a>"
+            return _bb_m_page(sid, rt, top, head + "<p>That time isn't available anymore. Please pick another.</p><a href='/m/" + sid + "/" + rt + "'>Back</a>", info)
         old = b.get("when", "")
         b["when"] = nw
         b["moved_from"] = old
@@ -575,13 +663,14 @@ def _bb_manage(sid, rt):
             notify("Booking RESCHEDULED at " + shop["name"], b.get("name", "") + " - " + b.get("service", "") + " - moved from " + old + " to " + nw, shop.get("email") or GMAIL)
         except Exception:
             pass
-        return S + "<h1>Rescheduled!</h1><p>Your new time: " + str(escape(nw)) + "</p><p>No extra charge.</p><a href='/m/" + sid + "/" + rt + "'>View booking</a>"
+        return _bb_m_page(sid, rt, "<h1>Rescheduled!</h1>", "<p>Your new time: " + str(escape(nw)) + "</p><p>No extra charge.</p><a href='/m/" + sid + "/" + rt + "'>View booking</a>")
     if sl:
         resched = "<h3>Reschedule (free)</h3><form method='post'><input type='hidden' name='act' value='resched'><select name='when' required>" + "".join("<option value='" + str(escape(v)) + "'>" + str(escape(lab)) + "</option>" for v, lab in sl) + "</select><button>Move my appointment</button></form><h3>Cancel</h3>"
     else:
         resched = "<p>No other open times right now to reschedule into.</p>"
     cancel = "<form method='post' data-m='Cancel this booking? You will be refunded $" + amt_s + ".' onsubmit='return confirm(this.dataset.m)'><input type='hidden' name='act' value='cancel'><button style='background:#d33'>Cancel booking (refund $" + amt_s + ")</button></form>"
-    return S + head + resched + "<p style='font-size:14px'>Cancelling refunds everything except the processing fee (card fees + 3.7% service fee).</p>" + cancel
+    policy = ("<span style='font-size:14px'>" + _bb_cx_html(_bb_cx_get(shop, b)) + "</span><br><b><span>If you cancel now you get back</span> $" + amt_s + "</b>")
+    return _bb_m_page(sid, rt, top, head + resched + "<p style='font-size:14px'>" + policy + "</p>" + cancel, info)
 
 
 @app.route("/ns/<sid>/<rt>", methods=["GET", "POST"])
@@ -1859,16 +1948,6 @@ def _bb_neg_banners(resp):
                 h = resp.get_data(as_text=True)
                 if "<div class='wrap'>" in h:
                     resp.set_data(h.replace("<div class='wrap'>", "<div class='wrap'>" + ban, 1))
-        elif parts[0] == "m" and len(parts) == 3:
-            shop = load().get(parts[1]) or {}
-            b = next((x for x in shop.get("bookings", []) if x.get("rt") == parts[2]), None)
-            if b and b.get("prop"):
-                ban = ("<div class='card' style='background:#fff6e5;border-left:6px solid #f0a500'><b>&#9203; Time change pending</b><br>" +
-                       ("The business suggested " if b["prop"].get("by") == "owner" else "You suggested ") + str(escape(_bb_fmt(b["prop"]["when"]))) +
-                       "<br><a href='/neg/" + parts[1] + "/" + parts[2] + "?as=c' style='font-weight:700'>Respond / view</a></div>")
-                h = resp.get_data(as_text=True)
-                i = h.find("</h1>")
-                resp.set_data(h[:i + 5] + ban + h[i + 5:] if i >= 0 else ban + h)
     except Exception as e:
         print("neg banner:", e)
     return resp
@@ -2000,6 +2079,8 @@ def _bb_push_inject(resp):
             return resp
         parts = request.path.strip("/").split("/")
         box = ""
+        if parts[0] == "m":
+            return resp
         if request.method == "GET" and parts[0] == "d" and len(parts) == 2 and "Block off time" in h:
             box = _bb_push_box(parts[1], "", "owner")
         else:
@@ -2151,9 +2232,9 @@ def _bb_cal_inject(resp):
             return resp
         parts = request.path.strip("/").split("/")
         m = None
-        if parts[0] == "m" and len(parts) == 3:
-            m = (parts[1], parts[2])
-        elif "booked" in h.lower():
+        if parts[0] == "m":
+            return resp
+        if "booked" in h.lower():
             x = re.search(r"/(?:m|r)/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", h)
             m = (x.group(1), x.group(2)) if x else None
         if m:
@@ -3256,20 +3337,6 @@ def _bb_v3_page(resp):
                     i = i + len("total bookings</div>") if i >= 0 else -1
                 h = h[:i] + add + h[i:] if i >= 0 else h + add
                 resp.set_data(h)
-        elif len(p) == 3 and p[0] == "m":
-            shop = load().get(p[1]) or {}
-            b = next((x for x in shop.get("bookings", []) if x.get("rt") == p[2]), None)
-            h = resp.get_data(as_text=True)
-            if b and "id='bbwith'" not in h:
-                bits = ""
-                if b.get("staff") and _bb_staff_name(shop, b["staff"]):
-                    bits += "<b>With:</b> " + str(escape(_bb_staff_name(shop, b["staff"]))) + "<br>"
-                if b.get("note"):
-                    bits += "<b>Your note:</b> " + str(escape(b["note"]))
-                if bits:
-                    i = h.find("</h1>")
-                    i = i + 5 if i >= 0 else 0
-                    resp.set_data(h[:i] + "<p id='bbwith'>" + bits + "</p>" + h[i:])
     except Exception as ex:
         print("v3 page:", ex)
     return resp
@@ -3582,9 +3649,7 @@ def _bb_dir_page(resp):
             return resp
         p = request.path.strip("/").split("/")
         sid = None
-        if len(p) == 3 and p[0] == "m":
-            sid = p[1]
-        elif len(p) == 2 and p[0] in ("book", "paid") and ("booked" in h.lower() or "you're all set" in h.lower()):
+        if len(p) == 2 and p[0] in ("book", "paid") and ("booked" in h.lower() or "you're all set" in h.lower()):
             sid = p[1]
         elif len(p) == 3 and p[0] == "line" and "your turn" in h.lower():
             sid = p[1]
@@ -4620,14 +4685,7 @@ def bb_qr_customer(sid, rt):
 def _bb_hub_link(resp):
     try:
         p = request.path.strip("/").split("/")
-        if request.method == "GET" and len(p) == 3 and p[0] == "m" and resp.status_code == 200 and resp.mimetype == "text/html":
-            h = resp.get_data(as_text=True)
-            if "<h1>Your booking</h1>" in h and "id='bbhub'" not in h:
-                a = ("<a id='bbhub' href='/my/" + p[1] + "/" + p[2] + "' style='display:block;text-align:center;padding:13px;margin:12px 0;"
-                     "border:2px solid #1a6dff;border-radius:12px;text-decoration:none;font-weight:800'>&#128203; All my bookings + my QR code</a>")
-                i = h.rfind("</body>")
-                resp.set_data(h[:i] + a + h[i:] if i >= 0 else h + a)
-        elif request.method == "GET" and len(p) == 2 and p[0] == "b" and resp.status_code == 200 and resp.mimetype == "text/html":
+        if request.method == "GET" and len(p) == 2 and p[0] == "b" and resp.status_code == 200 and resp.mimetype == "text/html":
             h = resp.get_data(as_text=True)
             if "id='bbappnote'" not in h and "<form" in h:
                 n = ("<div id='bbappnote' style='display:none;background:#eef3ff;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:15px'>"
@@ -5386,7 +5444,7 @@ def _bb_home_after(resp):
         if resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code >= 400:
             return resp
         pp = request.path.strip("/").split("/")
-        if len(pp) < 2 or pp[0] not in ("book", "paid", "m", "my"):
+        if len(pp) < 2 or pp[0] not in ("book", "paid", "my"):
             return resp
         if pp[0] == "book" and request.method != "POST":
             return resp
@@ -5466,27 +5524,19 @@ def _bb_ap_compact_rows(rows, limit=None):
               "<span><b>" + str(escape(shop.get("name", ""))) + "</b> <span style='color:#556'>&middot; " + str(escape(b.get("service", ""))) + "</span></span>"
               "<span style='color:#556;white-space:nowrap'>" + str(escape(_bb_hub_when(when).replace(" at ", ", "))) + "</span></a>")
     return h
-@app.after_request
-def _bb_mine_door(resp):
+def _bb_mine_btn():
+    """'My personal appointments' door at the top of All my businesses."""
     try:
-        if request.method != "GET" or request.path != "/mine" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
-            return resp
         if not _bb_oh_owned():
-            return resp
-        h = resp.get_data(as_text=True)
-        if "id='bbmineap'" in h:
-            return resp
+            return ""
         n = len(_bb_ap_list(_bb_ap_get()))
-        btn = ("<a id='bbmineap' href='/appointments' style='display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eef3ff;border-radius:14px;"
-               "padding:14px;margin:12px 0;color:#0b1f4d;text-decoration:none;text-align:left'><span><b style='font-size:17px'>&#128197; My personal appointments</b><br>"
-               "<span style='font-size:13px;color:#556'>Places you booked as a customer" + (" &middot; <b>" + str(n) + " upcoming</b>" if n else "") + "</span></span>"
-               "<span style='font-size:28px;color:#1a6dff;font-weight:800'>&rsaquo;</span></a>")
-        w = h.find("<div class='wrap'>")
-        h = h[:w + 18] + btn + h[w + 18:] if w >= 0 else btn + h
-        resp.set_data(h)
     except Exception as ex:
         print("my appts button:", ex, flush=True)
-    return resp
+        return ""
+    return ("<a id='bbmineap' href='/appointments' style='display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eef3ff;border-radius:14px;"
+            "padding:14px;margin:12px 0;color:#0b1f4d;text-decoration:none;text-align:left'><span><b style='font-size:17px'>&#128197; My personal appointments</b><br>"
+            "<span style='font-size:13px;color:#556'>Places you booked as a customer" + (" &middot; <b>" + str(n) + " upcoming</b>" if n else "") + "</span></span>"
+            "<span style='font-size:28px;color:#1a6dff;font-weight:800'>&rsaquo;</span></a>")
 # ===== END BB MINE APPTS =====
 
 
@@ -5666,6 +5716,8 @@ def _bb_cal2(shop, sid, due):
     while mth > 12: y, mth = y + 1, mth - 12
     while mth < 1: y, mth = y - 1, mth + 12
     duek = set(x.get("rt") for x in due if x.get("rt"))
+    base = _bb_own_base(shop)
+    newd = set(ds for ds, kind, x in _bb_own_new(shop, base) if kind != "cancelled") if base else set()
     cnt, ring = {}, {}
     for x in shop.get("bookings") or []:
         if not isinstance(x, dict) or x.get("done"):
@@ -5699,10 +5751,13 @@ def _bb_cal2(shop, sid, due):
                        + ("box-shadow:0 0 0 3px #ffd400;" if ring.get(ds) else "") + "'>" + str(n) + "</div>")
             cell = ("padding:4px 0;min-height:52px;border-radius:8px;text-decoration:none;color:" + ("#99a" if dd < today else "#0b1f4d") + ";display:block;"
                     + ("border:2px solid #1a6dff;" if dd == today else "border:1px solid #eef1f6;"))
-            h += "<a href='/cday/" + sid + "/" + ds + "' style='" + cell + "'><div style='font-size:14px;font-weight:700'>" + str(dd.day) + "</div>" + dot + "</a>"
+            nd = ("<span class='bbnewday' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#e23b3b;margin-left:3px;vertical-align:top'></span>"
+                  if ds in newd else "")
+            h += "<a href='/cday/" + sid + "/" + ds + "' style='" + cell + "'><div style='font-size:14px;font-weight:700'>" + str(dd.day) + nd + "</div>" + dot + "</a>"
     h += ("</div><div style='font-size:12px;color:#556;margin-top:8px'><span style='display:inline-block;width:12px;height:12px;border-radius:999px;background:#1a6dff;vertical-align:middle'></span> booked"
           " &nbsp; <span style='display:inline-block;width:12px;height:12px;border-radius:999px;background:#1a6dff;box-shadow:0 0 0 3px #ffd400;vertical-align:middle;margin-left:4px'></span>"
-          " needs attention &middot; tap a day to open it</div></div></div><!--/bbcal2-->")
+          " needs attention" + (" &nbsp; <span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#e23b3b;vertical-align:middle'></span> new since your last visit" if newd else "")
+          + " &middot; tap a day to open it</div></div></div><!--/bbcal2-->")
     return h
 def _bb_receipts(shop, sid, dn):
     e = lambda x: str(escape(x))
@@ -5915,7 +5970,6 @@ def _bb_cx_after(resp):
             return resp
         h = resp.get_data(as_text=True)
         old_b = "If you <b>cancel</b>, you get a refund minus a small processing fee (card fees + 3.7% service fee)."
-        old_m = "Cancelling refunds everything except the processing fee (card fees + 3.7% service fee)."
         if len(pp) == 2 and pp[0] == "d" and _bb_sess.get("own_" + pp[1]) and _bb_sess.get("cx_pending"):
             d = load()
             if isinstance(d.get(pp[1]), dict) and "cxl" not in d[pp[1]]:
@@ -5926,17 +5980,6 @@ def _bb_cx_after(resp):
             shop = load().get(pp[1])
             if isinstance(shop, dict):
                 resp.set_data(h.replace(old_b, _bb_cx_html(_bb_cx_get(shop)), 1))
-        elif len(pp) == 3 and pp[0] == "m" and old_m in h:
-            shop = load().get(pp[1])
-            b = _bb_hub_find(shop, pp[2]) if isinstance(shop, dict) else None
-            if isinstance(b, dict):
-                total = int(round(float(b.get("fee") or 0) * 100))
-                keep = b.get("keep")
-                if keep is None:
-                    keep = (int(round(total * BB_CUT)) + int(round(total * 0.029)) + 30) if total else 0
-                amt = _bb_cx_amount(shop, b, total, keep)
-                txt = ("<span style='font-size:14px'>" + _bb_cx_html(_bb_cx_get(shop, b)) + "</span><br><b><span>If you cancel now you get back</span> $%.2f</b>" % (amt / 100))
-                resp.set_data(h.replace(old_m, txt, 1))
         elif len(pp) == 2 and pp[0] == "edit" and _bb_sess.get("own_" + pp[1]) and "id='bbcxform'" not in h:
             shop = load().get(pp[1])
             k = h.rfind("<button>Save changes</button>")
@@ -5961,12 +6004,12 @@ try:
                    "Cancelled": "キャンセル済み", "Refunded": "返金済み", "Visit complete": "来店完了", "Marked no-show": "無断キャンセル扱い", "NEW": "新着"})
 except Exception:
     pass
-def _bb_cu_booking_items():
+def _bb_cu_booking_items(pairs=None):
     d = load()
     now = datetime.utcnow() - timedelta(hours=10)
     ns, soon = now.strftime("%Y-%m-%d %H:%M"), (now + timedelta(hours=36)).strftime("%Y-%m-%d %H:%M")
     out = []
-    for sid, rt in _bb_ap_get():
+    for sid, rt in (_bb_ap_get() if pairs is None else pairs):
         shop = d.get(sid)
         if not isinstance(shop, dict):
             continue
@@ -6125,31 +6168,48 @@ def _bb_inbox_buttons():
             "<a href='/notifications' style='" + b + "'>&#128276; <span>Notifications</span>" + _bb_ib_pill(_bb_nt_unread()) + "</a></div>")
 def _bb_ib_back():
     return "<p><a href='/appointments' style='font-weight:700'>&#8592; My appointments</a></p>"
+def _bb_nt_groups(items):
+    """Group notifications by booking (closed-business notices stay one per row). Newest booking first."""
+    groups = {}
+    for it in items:
+        g = it[6] if it[6].startswith("/m/") else it[0]
+        groups.setdefault(g, []).append(it)
+    return list(groups.items())
 @app.route("/notifications")
 def bb_notifications():
     from flask import make_response
+    from urllib.parse import quote as _q
     items, read, gone, first = _bb_nt_state()
     h = (_bb_ib_back() + "<div style='display:flex;align-items:center;justify-content:space-between'><h1 style='margin:6px 0'>&#128276; <span>Notifications</span></h1>"
          + ("<a href='/inbox/clear' style='font-weight:700'><span>Clear all</span></a>" if items else "") + "</div>")
     if not items:
         h += "<p style='color:#556'><span>You're all caught up.</span></p>"
-    for k, col, icon, lab, sub, when, link, w in items[:40]:
+    for g, rows in _bb_nt_groups(items)[:40]:
+        k, col, icon, lab, sub, when, link, w = rows[-1]
         fg, bg = _BB_CU_STY[col]
-        new = k not in read
-        h += ("<div class='bbnt' style='display:flex;align-items:stretch;margin:8px 0;border-left:5px solid " + fg + ";background:" + (bg if new else "#f6f7f9")
-              + ";border-radius:10px;" + ("" if new else "opacity:.7;") + "'>"
-              "<a href='/inbox/open?k=" + _bb_oh_q(k) + "' style='flex:1;display:flex;gap:10px;padding:10px;text-decoration:none;color:#0b1f4d;text-align:left'>"
-              "<span style='font-size:20px'>" + icon + "</span><span>" + ("<b>" + lab + "</b>" if new else lab)
-              + (" <span class='bbntdot' style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#1a6dff;margin-left:4px'></span>" if new else "")
+        n = len([r for r in rows if r[0] not in read])
+        arg = ("b=" + _q(g)) if g.startswith("/m/") else ("k=" + _bb_oh_q(k))
+        more = ""
+        h += ("<div class='bbnt' style='display:flex;align-items:stretch;margin:8px 0;border-left:5px solid " + fg + ";background:" + (bg if n else "#f6f7f9")
+              + ";border-radius:10px;" + ("" if n else "opacity:.7;") + "'>"
+              "<a href='/inbox/open?" + arg + "' style='flex:1;display:flex;gap:10px;padding:10px;text-decoration:none;color:#0b1f4d;text-align:left'>"
+              "<span style='font-size:20px'>" + icon + "</span><span>" + ("<b>" + lab + "</b>" if n else lab) + more
+              + (" <span class='bbntdot' style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#1a6dff;margin-left:4px'></span>" if n == 1 else "")
+              + _bb_ib_pill(n if n > 1 else 0)
               + "<br><span style='font-size:14px;color:#445'>" + sub + ("<br>" + when if when else "") + "</span></span></a>"
-              "<a href='/inbox/x?k=" + _bb_oh_q(k) + "' title='Clear' style='padding:10px 12px;color:#8a94a6;text-decoration:none;font-size:18px'>&#10005;</a></div>")
+              "<a href='/inbox/x?" + arg + "' title='Clear' style='padding:10px 12px;color:#8a94a6;text-decoration:none;font-size:18px'>&#10005;</a></div>")
     r = make_response(S + h)
     if first:
         _bb_ck_put(r, "bbntread", list(read))
     return r
 @app.route("/inbox/open")
 def bb_inbox_open():
-    k, m = request.args.get("k") or "", request.args.get("m") or ""
+    k, m, bl = request.args.get("k") or "", request.args.get("m") or "", request.args.get("b") or ""
+    if bl.startswith("/m/"):
+        items, read, gone, first = _bb_nt_state()
+        r = _bb_rd(bl + "#bbbkupd")
+        _bb_ck_put(r, "bbntread", list(read) + [i[0] for i in items if i[6] == bl])
+        return r
     if k:
         items, read, gone, first = _bb_nt_state()
         it = next((i for i in items if i[0] == k), None)
@@ -6160,7 +6220,11 @@ def bb_inbox_open():
 @app.route("/inbox/x")
 def bb_inbox_x():
     r = _bb_rd("/notifications")
-    _bb_ck_put(r, "bbntgone", _bb_ck("bbntgone") + [request.args.get("k") or ""])
+    bl = request.args.get("b") or ""
+    keys = [request.args.get("k") or ""]
+    if bl.startswith("/m/"):
+        keys = [i[0] for i in _bb_nt_state()[0] if i[6] == bl]
+    _bb_ck_put(r, "bbntgone", _bb_ck("bbntgone") + keys)
     return r
 @app.route("/inbox/clear")
 def bb_inbox_clear():
@@ -6534,6 +6598,11 @@ def _bb_al_bar(sid, shop):
     if due:
         out += row("/cday/" + sid + "/" + due[0][:10], "#fff6d6", "#f0d36b", "#5a4500", "&#9888;&#65039; <b>" + str(len(due)) + (" appointment needs" if len(due) == 1 else " appointments need")
                    + " attention</b> &middot; did they show up?")
+    base = _bb_own_base(shop)
+    for ds, kind, x in (_bb_own_new(shop, base) if base else []):
+        if kind == "cancelled":
+            out += row("/cday/" + sid + "/" + ds, "#f2f4f7", "#c3cad6", "#334", "&#128683; <b>" + e(x.get("name") or "A customer") + " cancelled</b> &middot; "
+                       + e(_bb_hub_when(x.get("when") or "")))
     nt = len([b for b in bk if (b.get("when") or "")[:10] == today])
     if nt:
         out += row("/cday/" + sid + "/" + today, "#eef3ff", "#1a6dff", "#0b1f4d", "&#128197; <b>" + str(nt) + (" appointment" if nt == 1 else " appointments") + " today</b>")
@@ -6598,7 +6667,49 @@ def _bb_save_core(d):
     _bb_svx_untag(d)
     _bb_svx_hash(d)
     return _bb_store_save(d)
+def _bb_svx_stamp(d):
+    now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")
+    for shop in d.values():
+        if not isinstance(shop, dict):
+            continue
+        for b in shop.get("bookings") or []:
+            if not isinstance(b, dict):
+                continue
+            if not b.get("booked_at"):
+                b["booked_at"] = now
+            if b.get("moved_from") and b.get("moved_mark") != b.get("when"):
+                b["moved_at"], b["moved_mark"] = now, b.get("when")
+def _bb_own_new(shop, seen=None):
+    """What changed since the owner last opened this business: list of (appointment day, kind, booking)."""
+    seen = seen or (shop.get("owner_seen") if isinstance(shop, dict) else None)
+    if not seen:
+        return []
+    now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+    out = []
+    for b in shop.get("bookings") or []:
+        if not isinstance(b, dict):
+            continue
+        w = b.get("when") or ""
+        if (b.get("booked_at") or "") > seen:
+            out.append((w[:10], "new", b))
+        elif (b.get("moved_at") or "") > seen:
+            out.append((w[:10], "moved", b))
+        elif not b.get("done") and seen[:16] < w <= now:
+            out.append((w[:10], "due", b))
+    for b in shop.get("cancelled") or []:
+        if isinstance(b, dict) and (b.get("cancelled_at") or "") > seen[:16]:
+            out.append(((b.get("when") or "")[:10], "cancelled", b))
+    return out
+def _bb_own_base(shop):
+    """Baseline for the calendar marks: the start of this visit, so the 30-second auto-refresh doesn't wipe them."""
+    seen = shop.get("owner_seen") if isinstance(shop, dict) else None
+    if not seen:
+        return None
+    if seen < (datetime.utcnow() - timedelta(hours=10, minutes=10)).strftime("%Y-%m-%d %H:%M:%S"):
+        return seen
+    return shop.get("owner_prev") or seen
 def save(d):
+    _bb_svx_stamp(d)
     _bb_svx_pend(d)
     _bb_svx_staff(d)
     freed = _bb_svx_wl_before(d)
