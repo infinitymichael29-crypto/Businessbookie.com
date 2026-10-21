@@ -5900,10 +5900,14 @@ def bb_cday(sid, ds):
             c += "<br>&#128221; " + e(x["note"])
         if x.get("caddr"):
             c += "<br>&#128663; " + e(x["caddr"])
+        paid = bool(x.get("pi") and float(x.get("fee") or 0) > 0)
+        refunded = bool(x.get("refund") or x.get("full_refund"))
+        rfb = (("<span style='display:inline-block;margin:4px 4px 0 0;color:#1faa59;font-weight:700'>&#9989; Refunded $%.2f</span>" % float(x.get("refund") or 0)) if refunded
+               else ("<a class='bbrfbtn' href='/refund/" + sid + "/" + rt + "' style='flex:1;min-width:0;display:flex;align-items:center;justify-content:center;text-align:center;box-sizing:border-box;margin:0;padding:10px 4px;font-size:15px;font-weight:700;border-radius:8px;text-decoration:none;border:2px solid #e23b3b;color:#e23b3b;background:#fff'>&#128184; Refund</a>")) if paid else ""
         if attn and x.get("rt"):
             c += ("<form method='post' action='/ns/" + sid + "/" + rt + "' style='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap'>"
-                  "<input type='password' name='pw' placeholder='&#128274; Your password to confirm' required autocomplete='current-password' style='flex-basis:100%;margin:0'>""<input type='hidden' name='back' value='/cday/" + sid + "/" + ds + "'>""<button name='a' value='showed' style='width:auto;background:#1faa59'>&#9989; Showed up</button>"
-                  "<button name='a' value='noshow' style='width:auto;background:#e23b3b' onclick=\"return confirm('" + _bb_ns_confirm(shop, x) + "')\">&#10060; No-show</button></form>")
+                  "<input type='password' name='pw' placeholder='&#128274; Your password to confirm' required autocomplete='current-password' style='flex-basis:100%;margin:0'>""<input type='hidden' name='back' value='/cday/" + sid + "/" + ds + "'>""<button name='a' value='showed' style='flex:1;min-width:0;width:auto;margin:0;padding:12px 4px;font-size:15px;background:#1faa59'>&#9989; Showed up</button>"
+                  "<button name='a' value='noshow' style='flex:1;min-width:0;width:auto;margin:0;padding:12px 4px;font-size:15px;background:#e23b3b' onclick=\"return confirm('" + _bb_ns_confirm(shop, x) + "')\">&#10060; No-show</button>" + rfb + "</form>")
         acts = ""
         if x.get("phone"):
             acts += "<a href='tel:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128222; Call</a>"
@@ -5912,11 +5916,9 @@ def bb_cday(sid, ds):
             c += _bb_dm_bell(shop, x)
         if x.get("rt") and not x.get("done"):
             acts += "<a href='/ns/" + sid + "/" + rt + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128260; Reschedule</a>"
-        if x.get("pi") and float(x.get("fee") or 0) > 0:
-            if x.get("refund") or x.get("full_refund"):
-                acts += "<span style='display:inline-block;margin:4px 4px 0 0;color:#1faa59;font-weight:700'>&#9989; Refunded $%.2f</span>" % float(x.get("refund") or 0)
-            else:
-                acts += "<a href='/refund/" + sid + "/" + rt + "' style='" + btn + "border:2px solid #e23b3b;color:#e23b3b'>&#128184; Refund</a>"
+        if paid and not (attn and x.get("rt")):
+            acts += (("<span style='display:inline-block;margin:4px 4px 0 0;color:#1faa59;font-weight:700'>&#9989; Refunded $%.2f</span>" % float(x.get("refund") or 0)) if refunded
+                     else "<a href='/refund/" + sid + "/" + rt + "' style='" + btn + "border:2px solid #e23b3b;color:#e23b3b'>&#128184; Refund</a>")
         return c + ("<div>" + acts + "</div>" if acts else "") + "</div>"
     rows = "".join(card(x, True) for x in due) + "".join(card(x, False) for x in rest)
     for bl in shop.get("blocks") or []:
