@@ -76,7 +76,7 @@ def setup():
 <input type='hidden' name='shop' value='{escape(shop)}'><input type='hidden' name='owner' value='{escape(request.values.get('owner',''))}'><input type='hidden' name='btype' value='{escape(bt)}'><input type='hidden' name='btype' value='{escape(bt)}'>
 {rows}
 <p>Add your own, one per line: name | booking fee</p>
-<input name='addr' placeholder='Business address'><input name='bphone' type='tel' placeholder='Business phone (customers can call)' required><label style='display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#334;margin:6px 0 10px;line-height:1.4'><input type='checkbox' name='owner_sms' value='1' style='width:auto;margin:3px 0 0;flex:none'><span>Yes, text me new-booking and cancellation alerts from Business-Bookie at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. Optional. <a href='/privacy'>Privacy Policy</a> &middot; <a href='/terms'>Terms</a></span></label><p style='font-size:13px;color:#556;margin:6px 0'>Refunds: you can refund customers from your dashboard. On a full refund you pay the card fee (about 2.9% + 30&cent;). <a href='/terms'>Terms</a></p>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
+<input name='addr' placeholder='Business address'><input name='bphone' type='tel' placeholder='Business phone (customers can call)' required><label style='display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#334;margin:6px 0 10px;line-height:1.4'><input type='checkbox' name='owner_sms' value='1' style='width:auto;margin:3px 0 0;flex:none'><span>Yes, text me new-booking and cancellation alerts from Business-Bookie at this number. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. Optional. <a href='/privacy'>Privacy Policy</a> &middot; <a href='/terms'>Terms</a></span></label><p style='font-size:13px;color:#556;margin:6px 0'>Refunds never cost you extra: the customer gets back everything except Stripe's card fee, you give back your price and Business-Bookie gives back its 3.7%. <a href='/terms'>Terms</a></p>{_bb_acct_inputs()}<textarea name='custom' rows='3' placeholder='Deluxe package | 40'></textarea>
 <input type='hidden' name='lat' id='glat'><input type='hidden' name='lng' id='glng'><button type='button' onclick='navigator.geolocation.getCurrentPosition(p=>(glat.value=p.coords.latitude,glng.value=p.coords.longitude,this.innerText="Location saved"))'>Use my location</button><p><b>Days you're open:</b></p><label style='margin-right:10px'><input type='checkbox' name='days' value='0' checked style='width:auto'> Mon</label><label style='margin-right:10px'><input type='checkbox' name='days' value='1' checked style='width:auto'> Tue</label><label style='margin-right:10px'><input type='checkbox' name='days' value='2' checked style='width:auto'> Wed</label><label style='margin-right:10px'><input type='checkbox' name='days' value='3' checked style='width:auto'> Thu</label><label style='margin-right:10px'><input type='checkbox' name='days' value='4' checked style='width:auto'> Fri</label><label style='margin-right:10px'><input type='checkbox' name='days' value='5'  style='width:auto'> Sat</label><label style='margin-right:10px'><input type='checkbox' name='days' value='6'  style='width:auto'> Sun</label><p>Opening time</p><input type='time' name='open' value='09:00'><p>Closing time</p><input type='time' name='close' value='17:00'><p>Appointment length</p><select name='slot'><option value='30'>30 minutes</option><option value='60'>1 hour</option><option value='90'>90 minutes</option><option value='120'>2 hours</option></select><button>Create my booking page</button></form>"""
 @app.route("/create", methods=["POST"])
 def create():
@@ -141,7 +141,7 @@ def book_page(sid):
 <input name='email' type='email' placeholder='Email (we send your booking link)' required>
 <select name='service'>{opts}</select>
 {slots}
-<div style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;font-size:14px'><b>Cancellation &amp; no-show terms</b><br>You pay in full now to hold your spot. You can <b>reschedule with the owner</b>. If you <b>cancel</b>, you get back the service price (the 3.7% service fee and card fees are not refunded).</div>
+<div style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;font-size:14px'><b>Cancellation &amp; no-show terms</b><br>You pay in full now to hold your spot. You can <b>reschedule with the owner</b>. If you <b>cancel</b>, you get back everything except the card processing fee (about 2.9% + 30¢).</div>
 <label style='display:flex;gap:8px;align-items:flex-start;margin:10px 0'><input type='checkbox' name='agree' value='1' required style='width:auto;margin-top:3px'> I have read and agree to the cancellation terms</label>
 <button>Book now</button></form>"""
 def _bb_g(o, k):
@@ -523,10 +523,6 @@ def paid(sid):
     return S + "<h1>You're booked and paid!</h1><p>" + str(escape(m["service"])) + " at " + str(escape(shop["name"])) + "</p><p>Booking fee paid: $" + ("%.2f" % fee) + ". The business has been notified.</p><p style='background:#eef3ff;border-radius:10px;padding:12px'>&#9993; We emailed your confirmation to <b>" + str(escape(m.get("email", ""))) + "</b>. It has your link to <b>reschedule or cancel</b>. Check your spam folder if you don't see it.</p><p><b>Need to cancel or reschedule? Save this link:</b><br><a href='/m/" + sid + "/" + rt + "'>" + request.host_url + "m/" + sid + "/" + rt + "</a></p><p><b>After your appointment, leave a review here (save this link):</b><br><a href='/r/" + sid + "/" + rt + "'>" + request.host_url + "r/" + sid + "/" + rt + "</a></p><a href='/b/" + sid + "'>Back</a>"
 
 
-try:
-    _BB_JA.update({"Service fee (3.7%) + card processing: ": "サービス料（3.7%）＋カード手数料：", "When:": "日時：", "Paid:": "お支払い："})
-except Exception:
-    pass
 def _bb_m_updates(sid, rt):
     """This booking's notifications, newest last, shown at the top of its page. Returns (html, keys)."""
     try:
@@ -572,10 +568,24 @@ def _bb_m_page(sid, rt, top, body, info=""):
             bits += "<b>Your note:</b> " + e(b["note"])
         if bits:
             info += "<p id='bbwith'>" + bits + "</p>"
+    links = ""
+    if b and top == "<h1>Your booking</h1>":
+        base = request.host_url.rstrip("/") if "localhost" in request.host else "https://" + request.host
+        ml, rl = base + "/m/" + sid + "/" + rt, base + "/r/" + sid + "/" + rt
+        done_ = (b.get("when") or "") <= (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+        links = ("<div class='card' id='bbbklinks' style='text-align:left'><b style='font-size:17px'>&#128279; <span>Your booking link</span></b>"
+                 "<p style='font-size:13px;color:#556;margin:4px 0'><span>Save or share it to come back to this booking anytime.</span></p>"
+                 "<div style='word-break:break-all;font-size:14px;background:#fff;border:1px solid #d7e0f0;border-radius:8px;padding:8px'>" + e(ml) + "</div>"
+                 "<button type='button' onclick=\"var u='" + e(ml) + "';if(navigator.share){navigator.share({url:u})}else{navigator.clipboard.writeText(u);this.innerText='Copied!'}\" "
+                 "style='margin-top:8px'>&#128203; <span>Copy / share link</span></button>"
+                 + ("" if b.get("reviewed") else
+                    ("<a href='/r/" + sid + "/" + rt + "' style='display:block;text-align:center;padding:12px;margin-top:8px;border:2px solid #e0b400;color:#8a6d00;border-radius:10px;text-decoration:none;font-weight:800'>&#11088; <span>Leave a review</span></a>" if done_
+                     else "<p style='font-size:13px;color:#556;margin:8px 0 0'><span>After your appointment, leave a review here:</span><br><a href='/r/" + sid + "/" + rt + "'>" + e(rl) + "</a></p>"))
+                 + "</div>")
     if info:
         first += ("<div class='card' id='bbbkinfo' style='text-align:left'><b style='font-size:17px'>&#128197; <span>Your appointment</span></b>" + info + "</div>"
                   "<div class='card' id='bbbizinfo' style='text-align:left'><b style='font-size:17px'>&#127970; " + e(shop.get("name", "")) + "</b>"
-                  + _bb_call_btn(shop) + _bb_dir_btn(shop) + "</div>")
+                  + _bb_call_btn(shop) + _bb_dir_btn(shop) + "</div>" + links)
     else:
         first += _bb_dir_btn(shop)
     sty = "display:block;text-align:center;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;margin:10px 0;"
@@ -641,13 +651,8 @@ def _bb_manage(sid, rt):
         if b.get("pi") and amt > 0:
             import stripe
             stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-            kw = {"payment_intent": b["pi"], "amount": amt}
-            if b.get("keep") is not None:
-                kw["reverse_transfer"] = True
-                if amt >= total:
-                    kw["refund_application_fee"] = True
             try:
-                stripe.Refund.create(**kw)
+                _bb_refund_money(b, amt, total, "cx-" + sid + "-" + rt)
             except Exception as e:
                 if not _bb_rs_skip(e):
                     return _bb_m_page(sid, rt, top, head + "<p>Refund failed: " + str(escape(str(e))) + "</p><p>Please contact the business.</p>", info)
@@ -700,6 +705,8 @@ def _bb_noshow(sid, rt):
     if not b:
         return redirect("/d/" + sid)
     a = request.form.get("a", "")
+    if request.method == "GET" and request.args.get("a") in ("showed", "noshow"):
+        return _bb_ns_page(sid, rt, shop, b, request.args.get("a"))
     if request.method == "POST" and a == "noshow":
         err = _bb_ns_refund(shop, sid, b)
         if err:
@@ -970,22 +977,20 @@ def _bb_delete(sid):
         import stripe
         stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
         for b in up:
-            if b.get("pi") and not b.get("full_refund"):
-                kw = {"payment_intent": b["pi"]}
-                if b.get("keep") is not None:
-                    kw["reverse_transfer"] = True
-                    kw["refund_application_fee"] = True
+            if b.get("pi") and b.get("refund") is None and not b.get("full_refund"):
+                ramt, rtot = _bb_refund_amt(b)
                 try:
-                    stripe.Refund.create(**kw)
+                    if ramt > 0:
+                        _bb_refund_money(b, ramt, rtot, "del-" + sid + "-" + str(b.get("rt")))
                 except Exception as e:
                     _r = _bb_rs_del_fail(e, b, sid)
                     if _r is not None:
                         save(d)
                         return _r
-                b["full_refund"] = True
+                b["refund"] = ramt / 100
         for b in up:
             if b.get("email"):
-                notify("Your booking at " + name + " was cancelled", "Sorry! " + name + " has closed on Business-Bookie, so your " + b.get("service", "") + " on " + b.get("when", "") + " is cancelled." + (" You will be refunded. It can take 5 to 10 business days to show on your card." if b.get("pi") else ""), b["email"])
+                notify("Your booking at " + name + " was cancelled", "Sorry! " + name + " has closed on Business-Bookie, so your " + b.get("service", "") + " on " + b.get("when", "") + " is cancelled." + ((" You will be refunded $%.2f (everything except the card processing fee). It can take 5 to 10 business days to show on your card." % float(b.get("refund") or 0)) if b.get("pi") else ""), b["email"])
         notify("Business deleted: " + name, "Your business was removed from Business-Bookie. " + str(len(up)) + " upcoming booking(s) were cancelled and the customers will be refunded.", shop.get("email") or GMAIL)
         try:
             _bb_closed_add(sid, name, up)
@@ -1371,22 +1376,23 @@ def _bb_privacy():
 
 @app.route("/terms")
 def _bb_terms():
-    return S + """<h1>Terms &amp; Conditions</h1><p><i>Last updated: October 21, 2026</i></p>
+    return S + """<h1>Terms &amp; Conditions</h1><p><i>Last updated: October 22, 2026</i></p>
 <p>By using Business-Bookie (business-bookie.com), you agree to these terms. You must be 18 or older to use Business-Bookie.</p>
 <h3>The service</h3>
 <p>Business-Bookie lets businesses list their services and take bookings, and lets customers book and pay. Each business is responsible for its own services, prices, hours, and for showing up to appointments.</p>
 <h3>Booking and payment</h3>
 <p>When you book a paid service, you pay the business's price <b>plus</b> a Business-Bookie service fee of 3.7% and card processing fees (about 2.9% + 30&cent;, charged by Stripe). The booking page shows the service price, the fees and the total before you pay. The business receives its full price. Free services cost nothing and need no card. Payments are processed securely by Stripe; we never see or store your full card number.</p>
 <h3>Cancellations, rescheduling, and no-shows</h3>
-<p>Each business sets its own cancellation policy: a full refund (including all fees), a refund of the service price (the 3.7% service fee and card fees are not refunded), or no refund, and how much notice is needed. The policy is shown on the booking page before you pay, and the policy shown when you booked is the one that applies to your booking. To reschedule, work it out with the business owner. Each business also sets what happens if you miss your appointment without cancelling (a no-show): no refund, a refund of the service price, or a full refund. It is shown before you pay. If a business removes itself from Business-Bookie, upcoming bookings are cancelled and the customers are refunded. If a time slot is booked by someone else at the same moment, the later payment is refunded in full.</p><p><b>Refunds by businesses.</b> A business can refund its customers from its dashboard. A refund minus fees returns the amount paid less the processing fee. A full refund returns everything to the customer: the business pays the card processing fee (about 2.9% + 30&cent;), taken from its Stripe balance, and Business-Bookie returns its 3.7% service fee. If the business's balance is too low, the card fee is owed to Business-Bookie.</p>
+<p>Each business sets its own cancellation policy: a refund of everything you paid except the card processing fee (about 2.9% + 30&cent;, which Stripe keeps), or no refund, and how much notice is needed. The policy is shown on the booking page before you pay, and the policy shown when you booked is the one that applies to your booking. To reschedule, work it out with the business owner. Each business also sets what happens if you miss your appointment without cancelling (a no-show): no refund, or a refund of everything except the card processing fee. It is shown before you pay. If a business removes itself from Business-Bookie, upcoming bookings are cancelled and the customers are refunded. If a time slot is booked by someone else at the same moment, the later payment is refunded in full.</p><p><b>How every refund works.</b> Whether a customer cancels, a business refunds from its dashboard, a business marks a no-show under a refund policy, or a business closes, the customer gets back everything they paid except the card processing fee, which Stripe keeps. The business gives back its own price and Business-Bookie gives back its 3.7% service fee, so a refund never costs a business more than it received. Bookings made before October 22, 2026 keep the refund policy shown when they were made.</p>
+<p><b>If something goes wrong with a refund.</b> Contact the business first. If it isn't resolved, email us: we can check the booking and payment records and, where the business's own policy calls for a refund, process it through Stripe. You can also contact your card issuer, but please talk to us first so we can help quickly.</p>
 <h3>Text messages (SMS)</h3>
-<p>By giving your phone number when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to stop receiving messages. Reply <b>HELP</b> for help, or email us below. Carriers are not liable for delayed or undelivered messages.</p>
+<p>If you tick the text-message box when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to stop receiving messages. Reply <b>HELP</b> for help, or email us below. Carriers are not liable for delayed or undelivered messages.</p>
 <h3>Business owners</h3>
 <p>Owners must give accurate information, connect a valid payout account through Stripe, keep their login private, and honor the bookings they accept.</p>
 <h3>Acceptable use</h3>
 <p>Don't misuse the site: no fake bookings, fraud, spam, or attempts to break or overload the service. We may suspend accounts that do.</p>
 <h3>We are a booking platform only</h3>
-<p>Business-Bookie only provides software that connects customers with independent businesses. We do not provide, supervise, or guarantee any service a business offers. Each business is solely responsible for its services, staff, premises, pricing, licenses, safety, and conduct. Any dispute about a service is between the customer and the business.</p>
+<p>Business-Bookie only provides software that connects customers with independent businesses. We do not provide, supervise, or guarantee any service a business offers. Each business is solely responsible for its services, staff, premises, pricing, licenses, safety, and conduct. Any dispute about a service is between the customer and the business. The business is responsible for honoring its own cancellation, no-show and refund policy; Business-Bookie processes the payments and refunds through Stripe.</p>
 <h3>Third-party services</h3>
 <p>We rely on outside providers, including Stripe (payments), Twilio (text messages, only if you opt in), Resend (email), Mapbox (maps and drive times for house calls), Neon (database), and Render (hosting). We are not responsible for their errors, outages, or delays, and their own terms apply to your use of them.</p>
 <h3>No warranties</h3>
@@ -1737,13 +1743,22 @@ _bb_icon_head = ("<link rel='icon' type='image/png' href='/favicon-32.png'><link
                  "<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){})}</script>")
 
 
+_BB_FRESH_JS = ("<script>(function(){var t=Date.now();function go(){if(Date.now()-t>3000)location.reload()}"
+                "window.addEventListener('pageshow',function(e){if(e.persisted)location.reload()});"
+                "document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')go()});"
+                "window.addEventListener('focus',go)})();</script>")
+_BB_FRESH_PATHS = ("/d/", "/cday/", "/cal/", "/mine", "/appointments", "/notifications", "/refunds/", "/clients/")
 @app.after_request
 def _bb_icons_inject(resp):
     try:
+        if resp.mimetype == "text/html" and not resp.direct_passthrough:
+            resp.headers["Cache-Control"] = "no-store"      # never show an old copy of a page
         if resp.mimetype == "text/html" and resp.status_code == 200 and not resp.direct_passthrough:
             h = resp.get_data(as_text=True)
             if "rel='manifest'" not in h:
                 h = h.replace("</head>", _bb_icon_head + "</head>", 1) if "</head>" in h else _bb_icon_head + h
+                if request.method == "GET" and request.path.startswith(_BB_FRESH_PATHS):
+                    h += _BB_FRESH_JS                      # coming back to this page reloads it
                 resp.set_data(h)
     except Exception as e:
         print("icons:", e)
@@ -1838,9 +1853,41 @@ def _bb_ns_amount(shop, b):
         keep = int(round(total * BB_CUT)) + int(round(total * 0.029)) + 30
     if rule == "full":
         return total, total
+    if rule == "refund":
+        return max(total - _bb_card_fee(total), 0), total
     if rule == "minus":
         return max(total - int(keep or 0), 0), total
     return 0, total
+def _bb_ns_page(sid, rt, shop, b, act):
+    """Its own page for Showed up / No-show: the booking, what will happen, then the owner's password."""
+    from urllib.parse import quote as _q
+    e = lambda v: str(escape(str(v or "")))
+    bk = request.args.get("back") or ""
+    bk = bk if bk.startswith("/cday/" + sid + "/") and "//" not in bk[1:] and len(bk) < 80 else "/d/" + sid
+    amt, total = _bb_ns_amount(shop, b)
+    head = ("<div class='card' style='text-align:left'><b style='font-size:18px'>" + e(b.get("name")) + "</b><br>" + e(b.get("service")) + "<br>"
+            + e(_bb_hub_when(b.get("when") or "")) + ("<br>Paid: <b>$%.2f</b>" % (total / 100) if total else "<br>Free booking") + "</div>")
+    if act == "showed":
+        title = "<h1>&#9989; Showed up</h1>"
+        what = ("<div class='card' id='bbnswhat' style='text-align:left;border-left:6px solid #1faa59;background:#e9f8ef'><b>What happens</b><br>"
+                "The visit is marked complete and goes to your receipts. The customer sees &ldquo;Visit complete&rdquo; and can leave a review."
+                + (" They get a &ldquo;time to book again&rdquo; reminder later." if int(shop.get("rebook_days") or 0) > 0 and _bb_feat(shop, "rebook") else "")
+                + " No money moves.</div>")
+        btn = "<button name='a' value='showed' style='background:#1faa59'>&#9989; Yes, they showed up</button>"
+    else:
+        title = "<h1>&#10060; No-show</h1>"
+        if total and amt > 0:
+            money = ("Under the policy this customer booked with, they get a refund:" + _bb_rf_breakdown(b, amt, total))
+        elif total:
+            money = "Under the policy this customer booked with, <b>they get no refund</b>. You keep the full payment."
+        else:
+            money = "This was a free booking, so no money moves."
+        what = ("<div class='card' id='bbnswhat' style='text-align:left;border-left:6px solid #e23b3b;background:#fde8e8'><b>What happens</b><br>"
+                "The booking is marked as a missed appointment and the customer is emailed. " + money + "</div>")
+        btn = "<button name='a' value='noshow' style='background:#e23b3b'>&#10060; Yes, mark as no-show</button>"
+    form = ("<form method='post' action='/ns/" + sid + "/" + rt + "'><input type='hidden' name='back' value='" + e(bk) + "'>"
+            "<p><b>Your password</b> (so nobody does this by accident)</p><input type='password' name='pw' required autocomplete='current-password'>" + btn + "</form>")
+    return S + title + head + what + form + _bb_rf_btn(bk, "&#8592; Back, don't change anything")
 def _bb_ns_confirm(shop, b):
     amt, total = _bb_ns_amount(shop, b)
     if amt <= 0:
@@ -1851,15 +1898,8 @@ def _bb_ns_refund(shop, sid, b):
     amt, total = _bb_ns_amount(shop, b)
     if amt <= 0:
         return ""
-    import stripe
-    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-    kw = {"payment_intent": b["pi"], "amount": amt, "idempotency_key": "bbns-" + sid + "-" + str(b.get("rt"))}
-    if b.get("keep") is not None:
-        kw["reverse_transfer"] = True
-        if amt >= total:
-            kw["refund_application_fee"] = True
     try:
-        stripe.Refund.create(**kw)
+        _bb_refund_money(b, amt, total, "ns-" + sid + "-" + str(b.get("rt")))
     except Exception as e:
         if not _bb_rs_skip(e):
             return str(e)
@@ -2893,7 +2933,7 @@ def _bb_v2_page(resp):
             h = h[:j + 7] + add + h[j + 7:] if j >= 0 else h + add
             resp.set_data(h)
         elif p[0] == "d" and "total bookings" in h and "id='bbstats'" not in h:
-            add = _bb_stats_html(shop) + _bb_wait_owner(shop)
+            add = _bb_stats_html(shop, p[1]) + _bb_wait_owner(shop)
             i = h.find("total bookings</div>")
             i = i + len("total bookings</div>") if i >= 0 else -1
             h = h[:i] + add + h[i:] if i >= 0 else h + add
@@ -2903,7 +2943,58 @@ def _bb_v2_page(resp):
     return resp
 
 
-def _bb_stats_html(shop):
+def _bb_stats_lists(shop):
+    """The bookings behind each number in 'Your numbers' (same rules as the box)."""
+    now = _bb_local_now(shop)
+    wk0 = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    wk1 = wk0 + timedelta(days=7)
+    out = {"up": [], "week": [], "month": []}
+    for b in shop.get("bookings", []):
+        st = _bb_pdt(b.get("when"))
+        if not st or _bb_is_cxl(b):
+            continue
+        if st >= now:
+            out["up"].append(b)
+        if wk0 <= st < wk1:
+            out["week"].append(b)
+        if st.year == now.year and st.month == now.month:
+            out["month"].append(b)
+    for k in out:
+        out[k].sort(key=lambda b: b.get("when") or "")
+    out["money"] = out["month"]
+    return out
+_BB_NUM_TITLE = {"up": "Upcoming", "week": "This week", "month": "This month", "money": "Booked this month"}
+@app.route("/nums/<sid>/<k>")
+def bb_nums(sid, k):
+    d = load()
+    shop = d.get(sid)
+    if not isinstance(shop, dict):
+        return S + "<h1>Business not found</h1>", 404
+    if not _bb_sess.get("own_" + sid):
+        return _bb_rd("/d/" + sid)
+    if k not in _BB_NUM_TITLE:
+        return _bb_rd("/d/" + sid)
+    e = lambda v: str(escape(str(v or "")))
+    rows = _bb_stats_lists(shop)[k]
+    total = 0.0
+    h = S + "<h1>" + e(_BB_NUM_TITLE[k]) + " (" + str(len(rows)) + ")</h1><p style='color:#556'>" + e(shop.get("name")) + " &middot; tap a booking to open it</p>"
+    for b in rows:
+        fee = float(b.get("fee") or 0)
+        total += fee
+        st = ("&#9989; done" if b.get("done") else ("&#128184; refunded" if b.get("refund") else ""))
+        h += ("<a class='bbnumrow' href='/cday/" + sid + "/" + e((b.get("when") or "")[:10]) + "#bk-" + e(b.get("rt")) + "' style='display:flex;justify-content:space-between;gap:8px;"
+              "align-items:center;padding:12px;margin:8px 0;border-radius:12px;background:#f4f7ff;border:1px solid #d7e0f0;text-decoration:none;color:#0b1f4d;text-align:left'>"
+              "<span><b>" + e(_bb_hub_when(b.get("when") or "")) + "</b><br>" + e(b.get("name")) + " &middot; " + e(b.get("service"))
+              + (" <span style='color:#137a3f;font-size:13px'>" + st + "</span>" if st else "") + "</span>"
+              "<span style='white-space:nowrap'>" + ("<b>$%.2f</b>" % fee if fee else "<span style='color:#889'>Free</span>")
+              + " <span style='color:#1a6dff;font-size:22px;font-weight:800'>&rsaquo;</span></span></a>")
+    if not rows:
+        h += "<div class='card'><p>No bookings here yet.</p></div>"
+    if k == "money":
+        h += ("<div class='card' id='bbnumtotal' style='display:flex;justify-content:space-between;font-weight:800;font-size:18px'><span>Total booked this month</span><span>$%.2f</span></div>" % total
+              + "<p style='font-size:13px;color:#556'>What customers paid at booking, before refunds. Your Stripe dashboard shows actual payouts.</p>")
+    return h + _bb_rf_btn("/d/" + sid, "&#8592; Back to dashboard")
+def _bb_stats_html(shop, sid=None):
     now = _bb_local_now(shop)
     wk0 = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     wk1 = wk0 + timedelta(days=7)
@@ -2929,7 +3020,9 @@ def _bb_stats_html(shop):
         dow[st.weekday()] += 1
     box = "flex:1;min-width:40%;background:#f4f7ff;border-radius:10px;padding:10px;text-align:center"
     num = "font-size:26px;font-weight:800;color:#1a6dff"
-    cell = lambda n, lab: "<div style='" + box + "'><div style='" + num + "'>" + n + "</div><div style='font-size:13px'>" + lab + "</div></div>"
+    _lk = {"upcoming": "up", "this week": "week", "this month": "month", "booked this month": "money"}
+    cell = lambda n, lab: (("<a class='bbnum' href='/nums/" + sid + "/" + _lk[lab] + "' style='" + box + ";display:block;text-decoration:none;color:#0b1f4d'>") if sid else "<div style='" + box + "'>") + \
+        "<div style='" + num + "'>" + n + "</div><div style='font-size:13px'>" + lab + (" &rsaquo;" if sid else "") + "</div>" + ("</a>" if sid else "</div>")
     top = sorted(svc.items(), key=lambda x: -x[1])[:3]
     tops = ", ".join(str(escape(k)) + " (" + str(v) + ")" for k, v in top) or "None yet"
     busy = _BB_DAYN[dow.index(max(dow))] if max(dow) else "Not enough data yet"
@@ -4887,7 +4980,7 @@ _BB_JA = {
     "reschedule with the owner": "日時の変更はお店にご相談ください",
     ". If you": "。",
     "cancel": "キャンセル",
-    ", you get back the service price (the 3.7% service fee and card fees are not refunded).": "した場合は、サービス料金が返金されます（3.7%のサービス料とカード手数料は返金されません）。",
+    ", you get back everything except the card processing fee (about 2.9% + 30¢).": "した場合は、カード手数料（約2.9%＋30セント）を除いて全額返金されます。",
     "No-shows:": "無断キャンセル:",
     "if you miss your appointment without cancelling, your payment is non-refundable.": "キャンセルの連絡なくご来店されなかった場合、お支払いは返金されません。",
     "I have read and agree to the cancellation terms": "キャンセル規定を読み、同意します",
@@ -4934,7 +5027,7 @@ _BB_JA = {
     "Reschedule (free)": "日時の変更（無料）",
     "Move my appointment": "予約を移動する",
     "Cancel": "キャンセル",
-    "Cancelling refunds the service price (the 3.7% service fee and card fees are not refunded).": "キャンセルするとサービス料金が返金されます（3.7%のサービス料とカード手数料は返金されません）。",
+    "Cancelling refunds everything except the card processing fee (about 2.9% + 30¢).": "キャンセルするとカード手数料（約2.9%＋30セント）を除いて全額返金されます。",
     "No other open times right now to reschedule into.": "現在、変更できる空き時間はありません。",
     "Booking not found": "予約が見つかりません",
     "Not found": "見つかりません",
@@ -5634,6 +5727,52 @@ def _bb_rf_amounts(b):
     if keep is None:
         keep = (int(round(total * BB_CUT)) + int(round(total * 0.029)) + 30) if total else 0
     return total, max(total - int(keep), 0)
+def _bb_card_fee(total):
+    """Stripe's card processing fee in cents for a charge of `total` cents (kept by Stripe on refunds)."""
+    return (int(round(total * 0.029)) + 30) if total else 0
+def _bb_refund_amt(b):
+    """(refund, total) in cents: everything the customer paid except Stripe's card fee."""
+    total = int(round(float(b.get("fee") or 0) * 100))
+    return max(total - _bb_card_fee(total), 0), total
+def _bb_refund_money(b, amt, total, key):
+    """Send `amt` cents back to the customer. The shop gives back its own share (its price), never more;
+    Business-Bookie covers the rest (its 3.7%). Raises if Stripe refuses the refund."""
+    import stripe
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    stripe.Refund.create(payment_intent=b["pi"], amount=amt, idempotency_key="bbr2-" + key)
+    keep = b.get("keep")
+    if keep is None:
+        return
+    share = min(max(total - int(keep), 0), amt)
+    if share <= 0:
+        return
+    try:
+        pi = stripe.PaymentIntent.retrieve(b["pi"], expand=["latest_charge"])
+        ch = pi["latest_charge"]
+        if isinstance(ch, str):
+            ch = stripe.Charge.retrieve(ch)
+        stripe.Transfer.create_reversal(ch["transfer"], amount=share, idempotency_key="bbrv-" + key)
+        b["shop_returned"] = share / 100
+    except Exception as ex:
+        b["shop_owes"] = share / 100
+        print("shop share not pulled back yet:", ex, flush=True)
+def _bb_rf_breakdown(b, amt, total):
+    """Who gives back what on a refund, for the owner's Refund page."""
+    keep = b.get("keep")
+    share = min(max(total - int(keep), 0), amt) if keep is not None else 0
+    bb = amt - share
+    fee = total - amt
+    row = lambda lab, v, bold=False: ("<div style='display:flex;justify-content:space-between;padding:4px 0;" + ("font-weight:800;border-top:1px solid #d7e0f0;margin-top:4px;padding-top:8px;" if bold else "") + "'>"
+                                      "<span>" + lab + "</span><span>$%.2f</span></div>" % (v / 100))
+    return ("<div id='bbrfbreak' style='text-align:left;border:2px solid #d7e0f0;border-radius:12px;padding:12px;margin:8px 0;background:#fff;font-size:15px'>"
+            "<div style='color:#556;font-size:13px;margin-bottom:6px'>Customer paid $%.2f</div>" % (total / 100)
+            + row("<b>You give back</b> (your price)", share)
+            + row("Business-Bookie gives back (its 3.7% service fee)", bb)
+            + row("Card fee, kept by Stripe", fee)
+            + row("Customer gets back", amt, True)
+            + "<div style='margin-top:8px;color:#137a3f;font-weight:700'>&#9989; You only give back what you were paid, never more.</div>"
+            + ("" if keep is not None else "<div style='margin-top:4px;color:#556;font-size:13px'>This payment went to Business-Bookie (payments weren't connected yet), so Business-Bookie gives it all back.</div>")
+            + "</div>")
 def _bb_rf_pw_ok(shop, pw):
     try:
         return bool(pw) and (_bb_pw_ok(shop.get("pw"), pw) if shop.get("pw") else pw == DASH_PASS)
@@ -5681,7 +5820,7 @@ def bb_refund_one(sid, rt):
     back = _bb_rf_btn("/refunds/" + sid, "&#8592; Back to refunds")
     if b is None:
         return S + "<h1>Booking not found</h1><p>It may have been cancelled already.</p>" + back, 404
-    total, minus = _bb_rf_amounts(b)
+    minus, total = _bb_refund_amt(b)
     head = ("<h1>&#128184; Refund " + str(escape(b.get("name", ""))) + "</h1><div class='card' style='text-align:left'><b>" + str(escape(b.get("service", ""))) + "</b><br>"
             + str(escape(_bb_hub_when(b.get("when") or ""))) + "<br>Customer paid: <b>$" + ("%.2f" % (total / 100)) + "</b></div>")
     if b.get("full_refund") or b.get("refund") is not None:
@@ -5691,40 +5830,24 @@ def bb_refund_one(sid, rt):
     msg = ""
     if request.method == "POST":
         kind = request.form.get("kind")
-        if kind not in ("full", "minus"):
-            msg = "<p style='color:#e23b3b'><b>Pick one of the two refund options.</b></p>"
+        if kind not in ("refund", "minus", "full"):
+            msg = "<p style='color:#e23b3b'><b>Please try again.</b></p>"
         elif not _bb_rf_pw_ok(shop, request.form.get("pw", "")):
             msg = "<p style='color:#e23b3b'><b>Wrong password.</b> Nothing was refunded.</p>"
         else:
-            amt = total if kind == "full" else minus
+            amt = minus
+            kind = "refund"
             if amt <= 0:
-                msg = "<p style='color:#e23b3b'><b>After fees there's nothing left to refund.</b> Try a full refund.</p>"
+                msg = "<p style='color:#e23b3b'><b>After the card fee there's nothing left to refund.</b></p>"
             else:
-                import stripe
-                stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-                kw = {"payment_intent": b["pi"], "amount": amt, "idempotency_key": "bbref-" + sid + "-" + rt + "-" + kind}
-                if b.get("keep") is not None:
-                    kw["reverse_transfer"] = True
-                    if kind == "full":
-                        kw["refund_application_fee"] = True
                 try:
-                    stripe.Refund.create(**kw)
+                    _bb_refund_money(b, amt, total, "own-" + sid + "-" + rt)
                 except Exception as e:
                     return S + head + "<p style='color:#e23b3b'><b>Refund failed:</b> " + str(escape(str(e))) + "</p><p>Nothing was changed.</p>" + back
                 now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
                 b["refund"] = amt / 100
                 b["refunded_by"] = "owner"
                 b["refund_kind"] = kind
-                if kind == "full":
-                    b["full_refund"] = True
-                    fee_c = int(round(total * 0.029)) + 30
-                    if shop.get("acct") and b.get("keep") is not None:
-                        try:
-                            stripe.Charge.create(amount=fee_c, currency="usd", source=shop["acct"], description="Card fee for full refund (" + b.get("name", "") + ")",
-                                                 idempotency_key="bbfee-" + sid + "-" + rt)
-                            b["card_fee_by_shop"] = fee_c / 100
-                        except Exception:
-                            b["card_fee_owed"] = fee_c / 100
                 upcoming = (b.get("when") or "") > now
                 if upcoming and request.form.get("cancel") == "1":
                     b["cancelled_at"] = now
@@ -5747,10 +5870,7 @@ def bb_refund_one(sid, rt):
         upcoming = False
     opt = "display:block;text-align:left;border:2px solid #d7e0f0;border-radius:12px;padding:12px;margin:8px 0;background:#fff"
     form = ("<form method='post'>"
-            "<label style='" + opt + "'><input type='radio' name='kind' value='full' required> <b>Full refund: $" + ("%.2f" % (total / 100)) + "</b><br>"
-            "<span style='font-size:14px;color:#556'>Customer gets everything back. The card fee ($" + ("%.2f" % ((int(round(total * 0.029)) + 30) / 100)) + ") comes out of your balance. Use this when it was your mistake.</span></label>"
-            "<label style='" + opt + "'><input type='radio' name='kind' value='minus'> <b>Refund minus fees: $" + ("%.2f" % (minus / 100)) + "</b><br>"
-            "<span style='font-size:14px;color:#556'>Same as when a customer cancels. Card and service fees aren't returned.</span></label>"
+            "<input type='hidden' name='kind' value='refund'>" + _bb_rf_breakdown(b, minus, total)
             + ("<label style='display:block;margin:10px 0'><input type='checkbox' name='cancel' value='1' checked> Also cancel the booking and free up the time</label>" if upcoming else "")
             + "<p><b>Your password</b> (so nobody refunds by accident)</p><input type='password' name='pw' required autocomplete='current-password'>"
             "<button style='background:#e23b3b'>Refund now</button></form>")
@@ -5805,9 +5925,13 @@ def _bb_cal2(shop, sid, due):
     duek = set(x.get("rt") for x in due if x.get("rt"))
     base = _bb_own_base(shop)
     newd = set(ds for ds, kind, x in _bb_own_new(shop, base) if kind != "cancelled") if base else set()
-    cnt, ring = {}, {}
+    cnt, ring, donec = {}, {}, {}
     for x in shop.get("bookings") or []:
-        if not isinstance(x, dict) or x.get("done"):
+        if not isinstance(x, dict):
+            continue
+        if x.get("done"):
+            dd_ = (x.get("when") or "")[:10]
+            donec[dd_] = donec.get(dd_, 0) + 1
             continue
         ds = (x.get("when") or "")[:10]
         cnt[ds] = cnt.get(ds, 0) + 1
@@ -5832,10 +5956,13 @@ def _bb_cal2(shop, sid, due):
                 h += "<div></div>"
                 continue
             n = cnt.get(ds, 0)
+            nd_ = donec.get(ds, 0)
             dot = ""
             if n:
                 dot = ("<div style='margin:3px auto 0;width:26px;height:26px;line-height:26px;border-radius:999px;background:#1a6dff;color:#fff;font-size:13px;font-weight:800;"
                        + ("box-shadow:0 0 0 3px #ffd400;" if ring.get(ds) else "") + "'>" + str(n) + "</div>")
+            if nd_:
+                dot += ("<div class='bbcaldone' style='margin:2px auto 0;font-size:11px;font-weight:800;color:#137a3f'>&#10003;" + str(nd_) + "</div>")
             cell = ("padding:4px 0;min-height:52px;border-radius:8px;text-decoration:none;color:" + ("#99a" if dd < today else "#0b1f4d") + ";display:block;"
                     + ("border:2px solid #1a6dff;" if dd == today else "border:1px solid #eef1f6;"))
             nd = ("<span class='bbnewday' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#e23b3b;margin-left:3px;vertical-align:top'></span>"
@@ -5843,7 +5970,7 @@ def _bb_cal2(shop, sid, due):
             h += "<a href='/cday/" + sid + "/" + ds + "' style='" + cell + "'><div style='font-size:14px;font-weight:700'>" + str(dd.day) + nd + "</div>" + dot + "</a>"
     h += ("</div><div style='font-size:12px;color:#556;margin-top:8px'><span style='display:inline-block;width:12px;height:12px;border-radius:999px;background:#1a6dff;vertical-align:middle'></span> booked"
           " &nbsp; <span style='display:inline-block;width:12px;height:12px;border-radius:999px;background:#1a6dff;box-shadow:0 0 0 3px #ffd400;vertical-align:middle;margin-left:4px'></span>"
-          " needs attention" + (" &nbsp; <span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#e23b3b;vertical-align:middle'></span> new since your last visit" if newd else "")
+          " needs attention &nbsp; <b style='color:#137a3f'>&#10003;</b> done" + (" &nbsp; <span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#e23b3b;vertical-align:middle'></span> new since your last visit" if newd else "")
           + " &middot; tap a day to open it</div></div></div><!--/bbcal2-->")
     return h
 def _bb_receipts(shop, sid, dn):
@@ -5893,7 +6020,7 @@ def bb_cday(sid, ds):
     def card(x, attn):
         rt = e(x.get("rt", ""))
         lab, amt = _bb_c2_money(shop, x)
-        c = ("<div class='card' style='text-align:left;border-left:6px solid " + ("#ffd400;background:#fffbe0" if attn else ("#1faa59" if x.get("done") else "#1a6dff")) + "'>"
+        c = ("<div class='card' id='bk-" + rt + "' style='text-align:left;scroll-margin-top:70px;border-left:6px solid " + ("#ffd400;background:#fffbe0" if attn else ("#1faa59" if x.get("done") else "#1a6dff")) + "'>"
              "<div style='font-size:20px;font-weight:800'>" + e(_bb_c2_t12(x.get("when") or "")) + (" <span style='font-size:13px;color:#8a6d00'>&#9888;&#65039; needs attention</span>" if attn else "")
              + (" <span style='font-size:13px;color:#1faa59'>&#10003; done</span>" if x.get("done") else "") + "</div>"
              "<b style='font-size:18px'>" + e(x.get("name", "")) + "</b><br>" + e(x.get("service", "")) + "<br><span style='color:#556'>" + lab + " $%.2f</span>" % amt)
@@ -5906,9 +6033,11 @@ def bb_cday(sid, ds):
         rfb = (("<span style='display:inline-block;margin:4px 4px 0 0;color:#1faa59;font-weight:700'>&#9989; Refunded $%.2f</span>" % float(x.get("refund") or 0)) if refunded
                else ("<a class='bbrfbtn' href='/refund/" + sid + "/" + rt + "' style='flex:1;min-width:0;display:flex;align-items:center;justify-content:center;text-align:center;box-sizing:border-box;margin:0;padding:10px 4px;font-size:15px;font-weight:700;border-radius:8px;text-decoration:none;border:2px solid #e23b3b;color:#e23b3b;background:#fff'>&#128184; Refund</a>")) if paid else ""
         if attn and x.get("rt"):
-            c += ("<form method='post' action='/ns/" + sid + "/" + rt + "' style='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap'>"
-                  "<input type='password' name='pw' placeholder='&#128274; Your password to confirm' required autocomplete='current-password' style='flex-basis:100%;margin:0'>""<input type='hidden' name='back' value='/cday/" + sid + "/" + ds + "'>""<button name='a' value='showed' style='flex:1;min-width:0;width:auto;margin:0;padding:12px 4px;font-size:15px;background:#1faa59'>&#9989; Showed up</button>"
-                  "<button name='a' value='noshow' style='flex:1;min-width:0;width:auto;margin:0;padding:12px 4px;font-size:15px;background:#e23b3b' onclick=\"return confirm('" + _bb_ns_confirm(shop, x) + "')\">&#10060; No-show</button>" + rfb + "</form>")
+            bs = "flex:1;min-width:0;display:flex;align-items:center;justify-content:center;text-align:center;box-sizing:border-box;margin:0;padding:12px 4px;font-size:15px;font-weight:700;border-radius:8px;text-decoration:none;color:#fff;"
+            back = "&back=" + quote("/cday/" + sid + "/" + ds)
+            c += ("<div class='bbattn' style='margin-top:8px;display:flex;gap:6px'>"
+                  "<a class='bbshowbtn' href='/ns/" + sid + "/" + rt + "?a=showed" + back + "' style='" + bs + "background:#1faa59'>&#9989; Showed up</a>"
+                  "<a class='bbnsbtn' href='/ns/" + sid + "/" + rt + "?a=noshow" + back + "' style='" + bs + "background:#e23b3b'>&#10060; No-show</a>" + rfb + "</div>")
         acts = ""
         if x.get("phone"):
             acts += "<a href='tel:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128222; Call</a>"
@@ -5941,11 +6070,13 @@ def bb_cday(sid, ds):
 
 
 # ===== BB CANCEL POLICY =====
-_BB_CX_DEF = {"early": "minus", "win": 0, "late": "minus", "ns": "none"}
-_BB_CX_RULE = {"full": "full refund", "minus": "refund of the service price (the 3.7% service fee and card fees are not refunded)", "none": "no refund"}
+_BB_CX_DEF = {"early": "refund", "win": 0, "late": "refund", "ns": "none"}
+_BB_CX_RULE = {"refund": "refund of everything except the card processing fee (about 2.9% + 30¢)", "none": "no refund",
+               "full": "full refund", "minus": "refund of the service price (the 3.7% service fee and card fees are not refunded)"}   # last two: older bookings only
 try:
     _BB_JA.update({"Cancellation policy:": "キャンセルポリシー：", "full refund.": "全額返金。", "no refund.": "返金なし。",
                    "refund of the service price (the 3.7% service fee and card fees are not refunded).": "サービス料金を返金（3.7%のサービス料とカード手数料は返金されません）。",
+                   "refund of everything except the card processing fee (about 2.9% + 30¢).": "カード手数料（約2.9%＋30セント）を除いて全額返金。",
                    "Cancel anytime before your appointment:": "予約時間前ならいつでもキャンセル可：", "Cancel later:": "それ以降のキャンセル：",
                    "Cancel at least 24 hours before:": "24時間前までのキャンセル：", "Cancel at least 48 hours before:": "48時間前までのキャンセル：",
                    "Cancel at least 72 hours before:": "72時間前までのキャンセル：", "If you cancel now you get back": "今キャンセルすると返金額は"})
@@ -5960,12 +6091,18 @@ except Exception:
     pass
 def _bb_cx_get(shop, b=None):
     c = dict(_BB_CX_DEF)
+    if b and not isinstance(b.get("cxl"), dict):
+        c.update({"early": "minus", "late": "minus"})   # bookings from before policies existed keep the old rule
     src = (b or {}).get("cxl") if isinstance((b or {}).get("cxl"), dict) else (shop.get("cxl") if isinstance(shop.get("cxl"), dict) and not b else None)
     if src:
         c.update({k: src[k] for k in ("early", "win", "late", "ns") if k in src})
+    if not b:                     # a business's current policy: old choices become the new refund
+        for k in ("early", "late", "ns"):
+            if c.get(k) in ("full", "minus"):
+                c[k] = "refund"
     if c["ns"] not in _BB_CX_RULE: c["ns"] = "none"
-    if c["early"] not in _BB_CX_RULE: c["early"] = "minus"
-    if c["late"] not in _BB_CX_RULE: c["late"] = "minus"
+    if c["early"] not in _BB_CX_RULE: c["early"] = "refund"
+    if c["late"] not in _BB_CX_RULE: c["late"] = "refund"
     try: c["win"] = int(c["win"]) if int(c["win"]) in (0, 24, 48, 72) else 0
     except Exception: c["win"] = 0
     return c
@@ -5998,8 +6135,11 @@ def _bb_cx_amount(shop, b, total, keep):
         return total
     if rule == "none":
         return 0
+    if rule == "refund":
+        return max(total - _bb_card_fee(total), 0)
     return max(total - int(keep or 0), 0)
 def _bb_cx_fee(shop, sid, b, total, amt):
+    return    # refunds never charge the shop a card fee anymore (see _bb_refund_money)
     try:
         if total and amt >= total and b.get("pi") and b.get("keep") is not None and shop.get("acct"):
             import stripe
@@ -6015,14 +6155,15 @@ def _bb_cx_fee(shop, sid, b, total, amt):
         pass
 def _bb_cx_form(c):
     o = lambda name, val, lab, cur: "<option value='" + str(val) + "'" + (" selected" if str(cur) == str(val) else "") + ">" + lab + "</option>"
-    rules = lambda name, cur: "".join(o(name, k, v, cur) for k, v in (("full", "Full refund"), ("minus", "Refund minus fees (card fees + 3.7%)"), ("none", "No refund")))
+    rules = lambda name, cur: "".join(o(name, k, v, cur) for k, v in (("refund", "Refund (everything except the card processing fee)"), ("none", "No refund")))
     return ("<div id='bbcxform' style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;text-align:left'>"
-            "<h3 style='margin:0 0 6px'>&#128203; Cancellation policy</h3><p style='font-size:13px;color:#556;margin:0 0 8px'>Customers see this before they pay. Each booking keeps the policy shown when it was made.</p>"
+            "<h3 style='margin:0 0 6px'>&#128203; Cancellation policy</h3><p style='font-size:13px;color:#556;margin:0 0 8px'>Customers see this before they pay. Each booking keeps the policy shown when it was made. "
+            "A refund never costs you extra: you give back your price, Business-Bookie gives back its 3.7%, and only Stripe's card fee is kept.</p>"
             "<p><b>If a customer cancels early</b></p><select name='cx_early'>" + rules("cx_early", c["early"]) + "</select>"
             "<p><b>&ldquo;Early&rdquo; means at least</b></p><select name='cx_win'>" + "".join(o("cx_win", v, l, c["win"]) for v, l in ((0, "Anytime before the appointment"), (24, "24 hours before"), (48, "48 hours before"), (72, "72 hours before"))) + "</select>"
             "<p><b>If they cancel later than that</b></p><select name='cx_late'>" + rules("cx_late", c["late"]) + "</select>"
             "<p><b>If they don't show up (no-show)</b></p><select name='cx_ns'>"
-            + "".join(o("cx_ns", k, v, c.get("ns", "none")) for k, v in (("none", "No refund (keep the full payment)"), ("minus", "Refund minus fees (card fees + 3.7%)"), ("full", "Full refund")))
+            + "".join(o("cx_ns", k, v, c.get("ns", "none")) for k, v in (("none", "No refund (keep the full payment)"), ("refund", "Refund (everything except the card processing fee)")))
             + "</select></div>")
 def _bb_cx_read():
     f = request.form
@@ -6072,7 +6213,7 @@ def _bb_cx_after(resp):
         if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
             return resp
         h = resp.get_data(as_text=True)
-        old_b = "If you <b>cancel</b>, you get back the service price (the 3.7% service fee and card fees are not refunded)."
+        old_b = "If you <b>cancel</b>, you get back everything except the card processing fee (about 2.9% + 30¢)."
         if len(pp) == 2 and pp[0] == "d" and _bb_sess.get("own_" + pp[1]) and _bb_sess.get("cx_pending"):
             d = load()
             if isinstance(d.get(pp[1]), dict) and "cxl" not in d[pp[1]]:
@@ -6884,8 +7025,8 @@ def _bb_log_events(old, new):
             nowm = now[:16]
             up = [b for b in was.get("bookings") or [] if isinstance(b, dict) and (b.get("when") or "") >= nowm]
             for b in up:
-                ev("cancelled (business closed)", sid, was, b, "", money(b.get("fee")) if b.get("pi") else "0.00",
-                   "refunded in full" if b.get("pi") else "free booking")
+                ev("cancelled (business closed)", sid, was, b, "", ("%.2f" % (_bb_refund_amt(b)[0] / 100)) if b.get("pi") else "0.00",
+                   "refunded everything except the card fee" if b.get("pi") else "free booking")
             ev("business deleted", sid, was, None, "", note=str(len(up)) + " upcoming booking(s) cancelled | owner " + (was.get("email") or ""))
             continue
         if not isinstance(shop, dict):
@@ -6911,7 +7052,7 @@ def _bb_log_events(old, new):
                 ev("showed up", sid, shop, b, "", note=svc)
             if float(b.get("refund") or 0) > float(pb.get("refund") or 0):
                 ev("refund", sid, shop, b, money(b.get("refund")), money(b.get("refund")),
-                   svc + " | " + ("full refund" if b.get("full_refund") else "refund minus fees") + (" | by owner" if b.get("refunded_by") == "owner" else ""))
+                   svc + " | " + ("full refund" if b.get("full_refund") else "refund (all but card fee)") + (" | by owner" if b.get("refunded_by") == "owner" else ""))
     return out
 def _bb_log_write(evs):
     if not evs:
@@ -7099,6 +7240,12 @@ import os
 try:
     _BB_JA_JS.update({"Service fee (3.7%) + card processing: ": "サービス料（3.7%）＋カード手数料：", "Total charged today: ": "本日のお支払い合計：",
                       " + large party deposit: ": " ＋ 大人数予約のデポジット：", "Total: Free</b> - no card needed": "合計：無料</b>（カード不要）"})
+except Exception:
+    pass
+try:
+    _BB_JA.update({"Service fee (3.7%) + card processing: ": "サービス料（3.7%）＋カード手数料：", "Your booking link": "予約リンク", "Save or share it to come back to this booking anytime.": "保存・共有すると、いつでもこの予約に戻れます。",
+                   "Copy / share link": "リンクをコピー・共有", "Leave a review": "レビューを書く", "After your appointment, leave a review here:": "ご来店後、こちらからレビューを書けます：",
+                   "Your appointment": "ご予約内容", "When:": "日時：", "Paid:": "お支払い："})
 except Exception:
     pass
 if __name__ == "__main__":
