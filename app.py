@@ -141,7 +141,7 @@ def book_page(sid):
 <input name='email' type='email' placeholder='Email (we send your booking link)' required>
 <select name='service'>{opts}</select>
 {slots}
-<div style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;font-size:14px'><b>Cancellation &amp; no-show terms</b><br>You pay in full now to hold your spot. You can <b>reschedule with the owner</b>. If you <b>cancel</b>, you get a refund minus a small processing fee (card fees + 3.7% service fee).</div>
+<div style='background:#fff6e5;border:1px solid #f0c36d;border-radius:10px;padding:12px;margin:12px 0;font-size:14px'><b>Cancellation &amp; no-show terms</b><br>You pay in full now to hold your spot. You can <b>reschedule with the owner</b>. If you <b>cancel</b>, you get back the service price (the 3.7% service fee and card fees are not refunded).</div>
 <label style='display:flex;gap:8px;align-items:flex-start;margin:10px 0'><input type='checkbox' name='agree' value='1' required style='width:auto;margin-top:3px'> I have read and agree to the cancellation terms</label>
 <button>Book now</button></form>"""
 def _bb_g(o, k):
@@ -524,7 +524,7 @@ def paid(sid):
 
 
 try:
-    _BB_JA.update({"Your appointment": "ご予約内容", "When:": "日時：", "Paid:": "お支払い："})
+    _BB_JA.update({"Service fee (3.7%) + card processing: ": "サービス料（3.7%）＋カード手数料：", "When:": "日時：", "Paid:": "お支払い："})
 except Exception:
     pass
 def _bb_m_updates(sid, rt):
@@ -1346,19 +1346,19 @@ _BB_CONTACT = "infinitymichael29@gmail.com"
 
 @app.route("/privacy")
 def _bb_privacy():
-    return S + """<h1>Privacy Policy</h1><p><i>Last updated: October 10, 2026</i></p>
+    return S + """<h1>Privacy Policy</h1><p><i>Last updated: October 21, 2026</i></p>
 <p>Business-Bookie (business-bookie.com) is an online booking service that lets businesses take appointments and payments, and lets customers book with them. This policy explains what we collect and how we use it.</p>
 <h3>What we collect</h3>
-<p><b>Customers:</b> your name, phone number, email address, the service and time you book, and any review you leave.<br><b>Business owners:</b> business name, owner name, address, email, password, hours, services and prices.<br><b>Payments:</b> card payments are processed by Stripe. We never see or store your full card number.</p>
+<p><b>Customers:</b> your name, phone number, email address, the service and time you book, notes you add, and any review you leave. If you book a house call, the address you give for it.<br><b>Business owners:</b> business name, owner name, address, email, password, hours, services and prices.<br><b>Payments:</b> card payments are processed by Stripe. We never see or store your full card number. We keep a record of each payment, refund and cancellation.<br><b>Location:</b> only if you tap "Businesses near me" or "Use my location", your phone shares its location to sort or place businesses. You can say no and still use the site.<br><b>Phone notifications:</b> only if you turn them on, we store a notification address from your browser so we can send booking updates to that phone.</p>
 <h3>How we use it</h3>
 <p>We use your information only to run bookings: confirming and managing appointments, sending reminders, confirmations, and cancellation notices, processing payments and refunds, and letting the business you booked with see your booking.</p>
 <h3>Text messages (SMS)</h3>
-<p>If you give your phone number when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to opt out at any time, or <b>HELP</b> for help.</p>
+<p>If you tick the text-message box when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to opt out at any time, or <b>HELP</b> for help.</p>
 <p><b>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.</b> Text messaging opt-in data and consent will not be shared with any third parties.</p>
 <h3>Who we share with</h3>
-<p>We share your booking details with the business you booked with, and we use trusted service providers to run the site: Stripe (payments), Twilio (text messages), Resend (email), Neon (database), and Render (hosting). They only use your data to provide those services. <b>We do not sell your personal information.</b></p>
+<p>We share your booking details with the business you booked with, and we use trusted service providers to run the site: Stripe (payments), Twilio (text messages, only if you opt in), Resend (email), Mapbox (maps and drive times for house calls), Neon (database), and Render (hosting). They only use your data to provide those services. <b>We do not sell your personal information.</b></p>
 <h3>Keeping and deleting data</h3>
-<p>We keep booking records as long as needed to run the service and meet legal and payment requirements. To ask us to delete your information, email us below.</p>
+<p>We keep booking records as long as needed to run the service. We keep a permanent record of bookings, payments, refunds and cancellations, even if a business is removed, so we can handle disputes, refunds, taxes and fraud prevention, as the law allows or requires. To ask us to delete your information, email us below: we remove your account and personal details that we are not required to keep.</p>
 <h3>Security</h3>
 <p>We use HTTPS and trusted providers to protect your data, but no system is 100% secure.</p>
 <h3>Age requirement</h3>
@@ -1371,14 +1371,14 @@ def _bb_privacy():
 
 @app.route("/terms")
 def _bb_terms():
-    return S + """<h1>Terms &amp; Conditions</h1><p><i>Last updated: October 10, 2026</i></p>
+    return S + """<h1>Terms &amp; Conditions</h1><p><i>Last updated: October 21, 2026</i></p>
 <p>By using Business-Bookie (business-bookie.com), you agree to these terms. You must be 18 or older to use Business-Bookie.</p>
 <h3>The service</h3>
 <p>Business-Bookie lets businesses list their services and take bookings, and lets customers book and pay. Each business is responsible for its own services, prices, hours, and for showing up to appointments.</p>
 <h3>Booking and payment</h3>
-<p>Customers pay the full price when booking. Payments are processed securely by Stripe. Business-Bookie keeps a small service fee from each payment.</p>
+<p>When you book a paid service, you pay the business's price <b>plus</b> a Business-Bookie service fee of 3.7% and card processing fees (about 2.9% + 30&cent;, charged by Stripe). The booking page shows the service price, the fees and the total before you pay. The business receives its full price. Free services cost nothing and need no card. Payments are processed securely by Stripe; we never see or store your full card number.</p>
 <h3>Cancellations, rescheduling, and no-shows</h3>
-<p>Each business sets its own cancellation policy: a full refund, a refund minus the processing fee (card fees plus a 3.7% service fee), or no refund, and how much notice is needed. The policy is shown on the booking page before you pay, and the policy shown when you booked is the one that applies to your booking. To reschedule, work it out with the business owner. Each business also sets what happens if you miss your appointment without cancelling (a no-show): no refund, a refund minus the processing fee, or a full refund. It is shown before you pay. If a business removes itself from Business-Bookie, upcoming bookings are cancelled and the customers are refunded. If a time slot is booked by someone else at the same moment, the later payment is refunded in full.</p><p><b>Refunds by businesses.</b> A business can refund its customers from its dashboard. A refund minus fees returns the amount paid less the processing fee. A full refund returns everything to the customer: the business pays the card processing fee (about 2.9% + 30&cent;), taken from its Stripe balance, and Business-Bookie returns its 3.7% service fee. If the business's balance is too low, the card fee is owed to Business-Bookie.</p>
+<p>Each business sets its own cancellation policy: a full refund (including all fees), a refund of the service price (the 3.7% service fee and card fees are not refunded), or no refund, and how much notice is needed. The policy is shown on the booking page before you pay, and the policy shown when you booked is the one that applies to your booking. To reschedule, work it out with the business owner. Each business also sets what happens if you miss your appointment without cancelling (a no-show): no refund, a refund of the service price, or a full refund. It is shown before you pay. If a business removes itself from Business-Bookie, upcoming bookings are cancelled and the customers are refunded. If a time slot is booked by someone else at the same moment, the later payment is refunded in full.</p><p><b>Refunds by businesses.</b> A business can refund its customers from its dashboard. A refund minus fees returns the amount paid less the processing fee. A full refund returns everything to the customer: the business pays the card processing fee (about 2.9% + 30&cent;), taken from its Stripe balance, and Business-Bookie returns its 3.7% service fee. If the business's balance is too low, the card fee is owed to Business-Bookie.</p>
 <h3>Text messages (SMS)</h3>
 <p>By giving your phone number when booking, you agree to receive appointment-related text messages: reminders, confirmations, and cancellation notices. Message frequency varies. Message and data rates may apply. Reply <b>STOP</b> to stop receiving messages. Reply <b>HELP</b> for help, or email us below. Carriers are not liable for delayed or undelivered messages.</p>
 <h3>Business owners</h3>
@@ -1388,7 +1388,7 @@ def _bb_terms():
 <h3>We are a booking platform only</h3>
 <p>Business-Bookie only provides software that connects customers with independent businesses. We do not provide, supervise, or guarantee any service a business offers. Each business is solely responsible for its services, staff, premises, pricing, licenses, safety, and conduct. Any dispute about a service is between the customer and the business.</p>
 <h3>Third-party services</h3>
-<p>We rely on outside providers, including Stripe (payments), Twilio (text messages), Resend (email), Neon (database), and Render (hosting). We are not responsible for their errors, outages, or delays, and their own terms apply to your use of them.</p>
+<p>We rely on outside providers, including Stripe (payments), Twilio (text messages, only if you opt in), Resend (email), Mapbox (maps and drive times for house calls), Neon (database), and Render (hosting). We are not responsible for their errors, outages, or delays, and their own terms apply to your use of them.</p>
 <h3>No warranties</h3>
 <p>The service is provided <b>"as is" and "as available,"</b> without warranties of any kind, express or implied, including fitness for a particular purpose. We don't promise the site will always be available, error-free, or that messages will always be delivered.</p>
 <h3>Limitation of liability</h3>
@@ -1601,7 +1601,7 @@ def _bb_fee_box(shop):
             "var g=document.querySelector('[name=guests]');var big=g&&g.value=='9+';var d=document.getElementById('bbfee');"
             "if(!e||!M[e.value]){d.style.display='none';return}var r=M[e.value];var b=big?r[2]:r[0],t=big?r[3]:r[1];"
             "if(t<=0){d.innerHTML='<b>Total: Free</b> - no card needed';d.style.display='block';return}"
-            "d.innerHTML=(big&&r[2]>r[0]?e.value+' + large party deposit: ':e.value+': ')+f(b)+'<br>Service &amp; card fees: '+f(t-b)+'<br><b>Total charged today: '+f(t)+'</b>';d.style.display='block'}"
+            "d.innerHTML=(big&&r[2]>r[0]?e.value+' + large party deposit: ':e.value+': ')+f(b)+'<br>Service fee (3.7%) + card processing: '+f(t-b)+'<br><b>Total charged today: '+f(t)+'</b>';d.style.display='block'}"
             "document.addEventListener('change',u);document.addEventListener('DOMContentLoaded',u);u()})();</script>")
 
 
@@ -4812,8 +4812,9 @@ def bb_assetlinks():
 # ===== BB DELETE DATA =====
 _BB_DEL_TXT = ("You can ask us to delete your account and all of your data at any time. Email "
                "<a href='mailto:infinitymichael29@gmail.com'>infinitymichael29@gmail.com</a> from the email on your account "
-               "and ask us to delete it. We remove your business or booking records, including your name, email, phone number "
-               "and appointment history, within 30 days.")
+               "and ask us to delete it. Within 30 days we remove your account and personal details, such as your name, phone number, "
+               "address and notes. Records of payments, refunds and cancellations are kept as long as the law requires (for taxes, "
+               "payment disputes and fraud prevention) and are not used for anything else.")
 
 
 @app.route("/delete-data")
@@ -4886,7 +4887,7 @@ _BB_JA = {
     "reschedule with the owner": "日時の変更はお店にご相談ください",
     ". If you": "。",
     "cancel": "キャンセル",
-    ", you get a refund minus a small processing fee (card fees + 3.7% service fee).": "した場合は、少額の手数料（カード手数料＋3.7%のサービス料）を差し引いて返金されます。",
+    ", you get back the service price (the 3.7% service fee and card fees are not refunded).": "した場合は、サービス料金が返金されます（3.7%のサービス料とカード手数料は返金されません）。",
     "No-shows:": "無断キャンセル:",
     "if you miss your appointment without cancelling, your payment is non-refundable.": "キャンセルの連絡なくご来店されなかった場合、お支払いは返金されません。",
     "I have read and agree to the cancellation terms": "キャンセル規定を読み、同意します",
@@ -4933,7 +4934,7 @@ _BB_JA = {
     "Reschedule (free)": "日時の変更（無料）",
     "Move my appointment": "予約を移動する",
     "Cancel": "キャンセル",
-    "Cancelling refunds everything except the processing fee (card fees + 3.7% service fee).": "キャンセルした場合、手数料（カード手数料＋3.7%のサービス料）を除いて全額返金されます。",
+    "Cancelling refunds the service price (the 3.7% service fee and card fees are not refunded).": "キャンセルするとサービス料金が返金されます（3.7%のサービス料とカード手数料は返金されません）。",
     "No other open times right now to reschedule into.": "現在、変更できる空き時間はありません。",
     "Booking not found": "予約が見つかりません",
     "Not found": "見つかりません",
@@ -5941,10 +5942,10 @@ def bb_cday(sid, ds):
 
 # ===== BB CANCEL POLICY =====
 _BB_CX_DEF = {"early": "minus", "win": 0, "late": "minus", "ns": "none"}
-_BB_CX_RULE = {"full": "full refund", "minus": "refund minus a small processing fee (card fees + 3.7% service fee)", "none": "no refund"}
+_BB_CX_RULE = {"full": "full refund", "minus": "refund of the service price (the 3.7% service fee and card fees are not refunded)", "none": "no refund"}
 try:
     _BB_JA.update({"Cancellation policy:": "キャンセルポリシー：", "full refund.": "全額返金。", "no refund.": "返金なし。",
-                   "refund minus a small processing fee (card fees + 3.7% service fee).": "少額の手数料（カード手数料＋3.7%のサービス料）を差し引いて返金。",
+                   "refund of the service price (the 3.7% service fee and card fees are not refunded).": "サービス料金を返金（3.7%のサービス料とカード手数料は返金されません）。",
                    "Cancel anytime before your appointment:": "予約時間前ならいつでもキャンセル可：", "Cancel later:": "それ以降のキャンセル：",
                    "Cancel at least 24 hours before:": "24時間前までのキャンセル：", "Cancel at least 48 hours before:": "48時間前までのキャンセル：",
                    "Cancel at least 72 hours before:": "72時間前までのキャンセル：", "If you cancel now you get back": "今キャンセルすると返金額は"})
@@ -6071,7 +6072,7 @@ def _bb_cx_after(resp):
         if request.method != "GET" or resp.direct_passthrough or resp.mimetype != "text/html" or resp.status_code != 200:
             return resp
         h = resp.get_data(as_text=True)
-        old_b = "If you <b>cancel</b>, you get a refund minus a small processing fee (card fees + 3.7% service fee)."
+        old_b = "If you <b>cancel</b>, you get back the service price (the 3.7% service fee and card fees are not refunded)."
         if len(pp) == 2 and pp[0] == "d" and _bb_sess.get("own_" + pp[1]) and _bb_sess.get("cx_pending"):
             d = load()
             if isinstance(d.get(pp[1]), dict) and "cxl" not in d[pp[1]]:
@@ -6820,12 +6821,248 @@ def _bb_own_base(shop):
     if seen < (datetime.utcnow() - timedelta(hours=10, minutes=10)).strftime("%Y-%m-%d %H:%M:%S"):
         return seen
     return shop.get("owner_prev") or seen
+
+# ===== BB HISTORY LOG =====
+# Every booking, payment, refund, cancel, no-show, move, signup and business deletion adds one line here.
+# Lines are only ever added - nothing in the app deletes them, even when a business deletes itself.
+import hashlib as _bb_lg_hash, re as _bb_lg_re
+def _bb_log_t():
+    k = _bb_dbkey()
+    return "bb_log" if k == "shops" else "bb_log_" + _bb_lg_re.sub(r"[^a-z0-9_]", "", k.lower())
+def _bb_log_path():
+    k = _bb_dbkey()
+    return os.path.join(os.path.dirname(os.path.abspath(DB)), "history.jsonl" if k == "shops" else "history_" + _bb_lg_re.sub(r"[^a-z0-9_]", "", k.lower()) + ".jsonl")
+_BB_LOG_COLS = ("k", "at", "kind", "sid", "biz", "rt", "who", "email", "amount", "note")
+def _bb_log_old(d):
+    """The saved version of every business that's about to change: {sid: shop} (None = new business)."""
+    snap = getattr(d, "_snap", None)
+    if snap is not None:
+        old = {}
+        for sid, shop in d.items():
+            s = str(sid)
+            if snap.get(s) != json.dumps(shop):
+                old[s] = json.loads(snap[s]) if s in snap else None
+        for s in snap:
+            if s not in d:
+                old[s] = json.loads(snap[s])
+        return old
+    try:
+        if os.environ.get("DATABASE_URL"):
+            return None
+        cur = json.load(open(DB)) if os.path.exists(DB) else {}
+    except Exception:
+        return None
+    old = {}
+    for sid, shop in d.items():
+        if json.dumps(cur.get(sid), sort_keys=True) != json.dumps(shop, sort_keys=True):
+            old[str(sid)] = cur.get(sid)
+    for sid in cur:
+        if sid not in d:
+            old[str(sid)] = cur[sid]
+    return old
+def _bb_log_events(old, new):
+    now = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")
+    out = []
+    money = lambda v: "%.2f" % float(v or 0)
+    def ev(kind, sid, shop, b, key, amount="", note=""):
+        b = b or {}
+        k = _bb_lg_hash.sha1("|".join([kind, sid, str(b.get("rt") or ""), key]).encode()).hexdigest()[:24]
+        out.append({"k": k, "at": now, "kind": kind, "sid": sid, "biz": (shop or {}).get("name", ""), "rt": str(b.get("rt") or ""),
+                    "who": b.get("name", ""), "email": b.get("email", ""), "amount": amount, "note": note[:300]})
+    def where(shop):
+        m = {}
+        for lst in ("bookings", "cancelled", "noshows"):
+            for b in (shop or {}).get(lst) or []:
+                if isinstance(b, dict) and b.get("rt"):
+                    m[str(b["rt"])] = (lst, b)
+        return m
+    for sid, was in (old or {}).items():
+        shop = new.get(sid)
+        if was is None and isinstance(shop, dict):
+            ev("business signed up", sid, shop, None, "", note=(shop.get("type") or "") + " | owner " + (shop.get("email") or ""))
+        if shop is None and isinstance(was, dict):
+            nowm = now[:16]
+            up = [b for b in was.get("bookings") or [] if isinstance(b, dict) and (b.get("when") or "") >= nowm]
+            for b in up:
+                ev("cancelled (business closed)", sid, was, b, "", money(b.get("fee")) if b.get("pi") else "0.00",
+                   "refunded in full" if b.get("pi") else "free booking")
+            ev("business deleted", sid, was, None, "", note=str(len(up)) + " upcoming booking(s) cancelled | owner " + (was.get("email") or ""))
+            continue
+        if not isinstance(shop, dict):
+            continue
+        before, after = where(was), where(shop)
+        for rt, (lst, b) in after.items():
+            svc = (b.get("service") or "") + " | " + (b.get("when") or "")
+            if rt not in before:
+                ev("booked", sid, shop, b, "", money(b.get("fee")), svc + (" | paid by card" if b.get("pi") else " | free"))
+                if lst == "cancelled":
+                    ev("cancelled", sid, shop, b, "", money(b.get("refund")), svc)
+                continue
+            plst, pb = before[rt]
+            if lst != plst:
+                if lst == "cancelled":
+                    ev("cancelled", sid, shop, b, "", money(b.get("refund")), svc + (" | by owner" if b.get("refunded_by") == "owner" else ""))
+                elif lst == "noshows":
+                    ev("no-show", sid, shop, b, "", money(b.get("refund")), svc + (" | refunded" if float(b.get("refund") or 0) > 0 else " | not refunded"))
+                continue
+            if (b.get("when") or "") != (pb.get("when") or ""):
+                ev("moved", sid, shop, b, b.get("when") or "", note=(b.get("service") or "") + " | " + (pb.get("when") or "") + " -> " + (b.get("when") or ""))
+            if b.get("done") and not pb.get("done"):
+                ev("showed up", sid, shop, b, "", note=svc)
+            if float(b.get("refund") or 0) > float(pb.get("refund") or 0):
+                ev("refund", sid, shop, b, money(b.get("refund")), money(b.get("refund")),
+                   svc + " | " + ("full refund" if b.get("full_refund") else "refund minus fees") + (" | by owner" if b.get("refunded_by") == "owner" else ""))
+    return out
+def _bb_log_write(evs):
+    if not evs:
+        return
+    if os.environ.get("DATABASE_URL"):
+        c = _bb_db()
+        try:
+            c.run("CREATE TABLE IF NOT EXISTS " + _bb_log_t() + " (k TEXT PRIMARY KEY, at TEXT, kind TEXT, sid TEXT, biz TEXT, rt TEXT, who TEXT, email TEXT, amount TEXT, note TEXT)")
+            for e in evs:
+                c.run("INSERT INTO " + _bb_log_t() + " (k, at, kind, sid, biz, rt, who, email, amount, note) VALUES (:k, :at, :kind, :sid, :biz, :rt, :who, :email, :amount, :note) "
+                      "ON CONFLICT (k) DO NOTHING", **e)
+        finally:
+            c.close()
+        return
+    p = _bb_log_path()
+    have = set()
+    if os.path.exists(p):
+        for line in open(p):
+            try:
+                have.add(json.loads(line)["k"])
+            except Exception:
+                pass
+    with open(p, "a") as f:
+        for e in evs:
+            if e["k"] not in have:
+                f.write(json.dumps(e) + "\n")
+def _bb_log_read():
+    if os.environ.get("DATABASE_URL"):
+        c = _bb_db()
+        try:
+            c.run("CREATE TABLE IF NOT EXISTS " + _bb_log_t() + " (k TEXT PRIMARY KEY, at TEXT, kind TEXT, sid TEXT, biz TEXT, rt TEXT, who TEXT, email TEXT, amount TEXT, note TEXT)")
+            rows = c.run("SELECT k, at, kind, sid, biz, rt, who, email, amount, note FROM " + _bb_log_t() + " ORDER BY at DESC")
+        finally:
+            c.close()
+        return [dict(zip(_BB_LOG_COLS, r)) for r in rows]
+    p = _bb_log_path()
+    out = []
+    if os.path.exists(p):
+        for line in open(p):
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                pass
+    out.sort(key=lambda e: e.get("at") or "", reverse=True)
+    return out
+# ----- admin page (only you): ADMIN_PASSWORD in Render's Environment -----
+_BB_ADM_FAIL = {}
+def _bb_adm_ok():
+    return bool(os.environ.get("ADMIN_PASSWORD")) and _bb_sess.get("bb_admin") == _bb_lg_hash.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest()[:16]
+def _bb_adm_filter(rows):
+    q = (request.args.get("q") or "").strip().lower()
+    kind = request.args.get("kind") or ""
+    frm, to = request.args.get("from") or "", request.args.get("to") or ""
+    out = []
+    for e in rows:
+        if kind and e.get("kind") != kind:
+            continue
+        if frm and (e.get("at") or "")[:10] < frm:
+            continue
+        if to and (e.get("at") or "")[:10] > to:
+            continue
+        if q and q not in " ".join(str(e.get(x) or "") for x in ("biz", "sid", "who", "email", "note", "rt")).lower():
+            continue
+        out.append(e)
+    return out
+@app.route("/admin", methods=["GET", "POST"])
+def bb_admin():
+    import hmac, time
+    e = lambda v: str(escape(str(v or "")))
+    head = "<meta name='robots' content='noindex'>" + S
+    if not os.environ.get("ADMIN_PASSWORD"):
+        return head + "<h1>&#128274; Admin is locked</h1><p>To turn it on, add <b>ADMIN_PASSWORD</b> in Render &rarr; Environment (a long password only you know).</p>"
+    if request.method == "POST":
+        ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+        f = _BB_ADM_FAIL.get(ip, [0, 0])
+        if f[0] >= 5 and time.time() - f[1] < 900:
+            return head + "<h1>Too many tries</h1><p>Wait 15 minutes, then try again.</p>"
+        if hmac.compare_digest((request.form.get("pw") or "").encode(), os.environ["ADMIN_PASSWORD"].encode()):
+            _BB_ADM_FAIL.pop(ip, None)
+            _bb_sess["bb_admin"] = _bb_lg_hash.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest()[:16]
+            return _bb_rd("/admin")
+        _BB_ADM_FAIL[ip] = [f[0] + 1, time.time()]
+        return head + "<h1>Wrong password</h1><a href='/admin'>Try again</a>"
+    if not _bb_adm_ok():
+        return head + ("<h1>&#128274; Admin</h1><form method='post'><input name='pw' type='password' placeholder='Admin password' required autocomplete='current-password'>"
+                       "<button>Open history</button></form>")
+    try:
+        allrows = _bb_log_read()
+    except Exception as ex:
+        return head + "<h1>History</h1><p style='color:#e23b3b'>Couldn't read the history: " + e(ex) + "</p>"
+    rows = _bb_adm_filter(allrows)
+    kinds = sorted(set(x.get("kind") or "" for x in allrows))
+    sel = request.args.get("kind") or ""
+    fl = lambda k: float(k or 0)
+    paid = sum(fl(x.get("amount")) for x in rows if x.get("kind") == "booked" and "paid by card" in (x.get("note") or ""))
+    refunded = sum(fl(x.get("amount")) for x in rows if x.get("kind") in ("refund", "cancelled", "no-show", "cancelled (business closed)"))
+    nb = len([x for x in rows if x.get("kind") == "booked"])
+    from urllib.parse import urlencode
+    qs = urlencode({k: request.args.get(k) for k in ("q", "kind", "from", "to") if request.args.get(k)})
+    col = {"booked": "#1a6dff", "refund": "#1faa59", "cancelled": "#8a94a6", "no-show": "#e23b3b", "moved": "#e0b400", "showed up": "#1faa59",
+           "business signed up": "#6b3fd1", "business deleted": "#e23b3b", "cancelled (business closed)": "#8a94a6"}
+    h = (head + "<h1>&#128218; History</h1><p style='color:#556;font-size:13px'>Every booking, payment, refund, cancel, no-show and change - kept even if a business is deleted. "
+         "Money totals here are a record; Stripe is the official source for payouts.</p>"
+         "<form method='get' style='text-align:left'><input name='q' placeholder='Search business, customer, email' value='" + e(request.args.get("q")) + "'>"
+         "<select name='kind'><option value=''>Everything</option>" + "".join("<option" + (" selected" if k == sel else "") + ">" + e(k) + "</option>" for k in kinds) + "</select>"
+         "<div style='display:flex;gap:6px'><input type='date' name='from' value='" + e(request.args.get("from")) + "'><input type='date' name='to' value='" + e(request.args.get("to")) + "'></div>"
+         "<button>Search</button></form>"
+         "<div class='card' style='display:flex;justify-content:space-around;text-align:center'><div><b style='font-size:22px'>" + str(nb) + "</b><br>bookings</div>"
+         "<div><b style='font-size:22px'>$%.2f</b><br>paid by card</div><div><b style='font-size:22px'>$%.2f</b><br>refunded</div></div>" % (paid, refunded)
+         + "<p style='font-size:13px'>" + str(len(rows)) + " of " + str(len(allrows)) + " lines &middot; <a href='/admin.csv" + ("?" + qs if qs else "") + "'>Download as spreadsheet (CSV)</a> &middot; <a href='/admin/logout'>Log out</a></p>")
+    for x in rows[:300]:
+        c = col.get(x.get("kind"), "#556")
+        h += ("<div class='bbhist' style='text-align:left;border-left:5px solid " + c + ";background:#f6f8fc;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:14px'>"
+              "<b style='color:" + c + "'>" + e(x.get("kind")) + "</b>" + (" &middot; <b>$" + e(x.get("amount")) + "</b>" if x.get("amount") not in ("", None, "0.00") else "")
+              + "<span style='float:right;color:#667'>" + e(x.get("at"))[:16] + "</span><br>" + e(x.get("biz")) + (" &middot; " + e(x.get("who")) if x.get("who") else "")
+              + (" &middot; " + e(x.get("email")) if x.get("email") else "") + "<br><span style='color:#556'>" + e(x.get("note")) + "</span></div>")
+    if len(rows) > 300:
+        h += "<p>Showing the newest 300. Search or download the spreadsheet for the rest.</p>"
+    return h
+@app.route("/admin.csv")
+def bb_admin_csv():
+    import csv, io
+    if not _bb_adm_ok():
+        return _bb_rd("/admin")
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["time (Hawaii)", "what", "business", "customer", "email", "amount", "details", "business id", "booking id"])
+    for x in _bb_adm_filter(_bb_log_read()):
+        w.writerow([x.get("at"), x.get("kind"), x.get("biz"), x.get("who"), x.get("email"), x.get("amount"), x.get("note"), x.get("sid"), x.get("rt")])
+    return app.response_class(buf.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=business-bookie-history.csv"})
+@app.route("/admin/logout")
+def bb_admin_logout():
+    _bb_sess.pop("bb_admin", None)
+    return _bb_rd("/admin")
+# ===== END BB HISTORY LOG =====
+
 def save(d):
     _bb_svx_stamp(d)
     _bb_svx_pend(d)
     _bb_svx_staff(d)
     freed = _bb_svx_wl_before(d)
+    try:
+        _evs = _bb_log_events(_bb_log_old(d), d)
+    except Exception as ex:
+        print("history log:", ex, flush=True)
+        _evs = []
     r = _bb_with_retry(_bb_save_core, d)
+    try:
+        _bb_log_write(_evs)
+    except Exception as ex:
+        print("history log write:", ex, flush=True)
     _bb_svx_wl_after(d, freed)
     return r
 def _bb_nf_shops():
@@ -6858,5 +7095,11 @@ def _bb_bphone_in(shop):
 # ===== END BB CORE =====
 
 import os
+
+try:
+    _BB_JA_JS.update({"Service fee (3.7%) + card processing: ": "サービス料（3.7%）＋カード手数料：", "Total charged today: ": "本日のお支払い合計：",
+                      " + large party deposit: ": " ＋ 大人数予約のデポジット：", "Total: Free</b> - no card needed": "合計：無料</b>（カード不要）"})
+except Exception:
+    pass
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
