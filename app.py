@@ -223,7 +223,7 @@ def dash(sid):
     for x in bk:
         try: _t = datetime.strptime(x.get("when", ""), "%Y-%m-%d %H:%M")
         except Exception: continue
-        if _t <= _now and x.get("rt") and not x.get("done"):
+        if _t <= _now and x.get("rt") and not x.get("done") and not (x.get("refund") or x.get("full_refund")):
             _due.append(x)
     _up, _dn = [], [x for x in bk if x.get("done")]
     for x in bk:
@@ -2981,7 +2981,7 @@ def bb_nums(sid, k):
     for b in rows:
         fee = float(b.get("fee") or 0)
         total += fee
-        st = ("&#9989; done" if b.get("done") else ("&#128184; refunded" if b.get("refund") else ""))
+        st = ("&#128184; refunded" if b.get("refund") else ("&#9989; done" if b.get("done") else ""))
         h += ("<a class='bbnumrow' href='/cday/" + sid + "/" + e((b.get("when") or "")[:10]) + "#bk-" + e(b.get("rt")) + "' style='display:flex;justify-content:space-between;gap:8px;"
               "align-items:center;padding:12px;margin:8px 0;border-radius:12px;background:#f4f7ff;border:1px solid #d7e0f0;text-decoration:none;color:#0b1f4d;text-align:left'>"
               "<span><b>" + e(_bb_hub_when(b.get("when") or "")) + "</b><br>" + e(b.get("name")) + " &middot; " + e(b.get("service"))
@@ -5925,9 +5925,22 @@ def _bb_cal2(shop, sid, due):
     duek = set(x.get("rt") for x in due if x.get("rt"))
     base = _bb_own_base(shop)
     newd = set(ds for ds, kind, x in _bb_own_new(shop, base) if kind != "cancelled") if base else set()
-    cnt, ring, donec = {}, {}, {}
+    cnt, ring, donec, nsc, refc = {}, {}, {}, {}, {}
+    movc = {}
+    for x in shop.get("bookings") or []:
+        if isinstance(x, dict) and isinstance(x.get("prop"), dict) and x["prop"].get("when"):
+            for dm_ in {(x.get("when") or "")[:10], x["prop"]["when"][:10]}:
+                movc[dm_] = movc.get(dm_, 0) + 1
+    for x in shop.get("noshows") or []:
+        if isinstance(x, dict):
+            nd2 = (x.get("when") or "")[:10]
+            nsc[nd2] = nsc.get(nd2, 0) + 1
     for x in shop.get("bookings") or []:
         if not isinstance(x, dict):
+            continue
+        if x.get("refund") or x.get("full_refund"):
+            rf_d = (x.get("when") or "")[:10]
+            refc[rf_d] = refc.get(rf_d, 0) + 1
             continue
         if x.get("done"):
             dd_ = (x.get("when") or "")[:10]
@@ -5961,16 +5974,23 @@ def _bb_cal2(shop, sid, due):
             if n:
                 dot = ("<div style='margin:3px auto 0;width:26px;height:26px;line-height:26px;border-radius:999px;background:#1a6dff;color:#fff;font-size:13px;font-weight:800;"
                        + ("box-shadow:0 0 0 3px #ffd400;" if ring.get(ds) else "") + "'>" + str(n) + "</div>")
-            if nd_:
-                dot += ("<div class='bbcaldone' style='margin:2px auto 0;font-size:11px;font-weight:800;color:#137a3f'>&#10003;" + str(nd_) + "</div>")
+            nn_ = nsc.get(ds, 0)
+            nr_ = refc.get(ds, 0)
+            if nd_ or nn_ or nr_:
+                mk_ = [("<span class='bbcaldone' style='color:#137a3f'>&#10003;" + str(nd_) + "</span>" if nd_ else ""),
+                       ("<span class='bbcalrf' style='color:#8a94a6'>&#10003;" + str(nr_) + "</span>" if nr_ else ""),
+                       ("<span class='bbcalns' style='color:#e23b3b'>&#10007;" + str(nn_) + "</span>" if nn_ else "")]
+                dot += ("<div style='margin:2px auto 0;font-size:11px;font-weight:800;line-height:1.3'>" + " ".join(x_ for x_ in mk_ if x_) + "</div>")
+            if movc.get(ds):
+                dot += "<div class='bbcalmv' style='margin:1px auto 0;font-size:12px;line-height:1.2'>&#128260;</div>"
             cell = ("padding:4px 0;min-height:52px;border-radius:8px;text-decoration:none;color:" + ("#99a" if dd < today else "#0b1f4d") + ";display:block;"
                     + ("border:2px solid #1a6dff;" if dd == today else "border:1px solid #eef1f6;"))
-            nd = ("<span class='bbnewday' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#e23b3b;margin-left:3px;vertical-align:top'></span>"
+            nd = ("<div><span class='bbnewday' style='display:inline-block;padding:0 4px;border-radius:4px;background:#e23b3b;color:#fff;font-size:9px;font-weight:800;line-height:13px;letter-spacing:.3px'>NEW</span></div>"
                   if ds in newd else "")
-            h += "<a href='/cday/" + sid + "/" + ds + "' style='" + cell + "'><div style='font-size:14px;font-weight:700'>" + str(dd.day) + nd + "</div>" + dot + "</a>"
+            h += "<a href='/cday/" + sid + "/" + ds + "' style='" + cell + "'><div style='font-size:14px;font-weight:700'>" + str(dd.day) + "</div>" + nd + dot + "</a>"
     h += ("</div><div style='font-size:12px;color:#556;margin-top:8px'><span style='display:inline-block;width:12px;height:12px;border-radius:999px;background:#1a6dff;vertical-align:middle'></span> booked"
           " &nbsp; <span style='display:inline-block;width:12px;height:12px;border-radius:999px;background:#1a6dff;box-shadow:0 0 0 3px #ffd400;vertical-align:middle;margin-left:4px'></span>"
-          " needs attention &nbsp; <b style='color:#137a3f'>&#10003;</b> done" + (" &nbsp; <span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#e23b3b;vertical-align:middle'></span> new since your last visit" if newd else "")
+          " needs attention &nbsp; <b style='color:#137a3f'>&#10003;</b> done &nbsp; <b style='color:#8a94a6'>&#10003;</b> refunded &nbsp; <b style='color:#e23b3b'>&#10007;</b> no-show" + (" &nbsp; &#128260; time change pending" if movc else "") + (" &nbsp; <span style='display:inline-block;padding:0 4px;border-radius:4px;background:#e23b3b;color:#fff;font-size:9px;font-weight:800;line-height:13px;vertical-align:middle'>NEW</span> new since your last visit" if newd else "")
           + " &middot; tap a day to open it</div></div></div><!--/bbcal2-->")
     return h
 def _bb_receipts(shop, sid, dn):
@@ -6011,7 +6031,7 @@ def bb_cday(sid, ds):
     bk = sorted([x for x in shop.get("bookings") or [] if isinstance(x, dict) and (x.get("when") or "")[:10] == ds], key=lambda x: x.get("when") or "")
     def isdue(x):
         try:
-            return (not x.get("done")) and bool(x.get("rt")) and datetime.strptime(x.get("when", ""), "%Y-%m-%d %H:%M") <= now
+            return (not x.get("done")) and not (x.get("refund") or x.get("full_refund")) and bool(x.get("rt")) and datetime.strptime(x.get("when", ""), "%Y-%m-%d %H:%M") <= now
         except Exception:
             return False
     due = [x for x in bk if isdue(x)]
@@ -6020,10 +6040,16 @@ def bb_cday(sid, ds):
     def card(x, attn):
         rt = e(x.get("rt", ""))
         lab, amt = _bb_c2_money(shop, x)
-        c = ("<div class='card' id='bk-" + rt + "' style='text-align:left;scroll-margin-top:70px;border-left:6px solid " + ("#ffd400;background:#fffbe0" if attn else ("#1faa59" if x.get("done") else "#1a6dff")) + "'>"
+        c = ("<div class='card' id='bk-" + rt + "' style='text-align:left;scroll-margin-top:70px;border-left:6px solid " + ("#ffd400;background:#fffbe0" if attn else ("#8a94a6" if (x.get("refund") or x.get("full_refund")) else ("#1faa59" if x.get("done") else "#1a6dff"))) + "'>"
              "<div style='font-size:20px;font-weight:800'>" + e(_bb_c2_t12(x.get("when") or "")) + (" <span style='font-size:13px;color:#8a6d00'>&#9888;&#65039; needs attention</span>" if attn else "")
-             + (" <span style='font-size:13px;color:#1faa59'>&#10003; done</span>" if x.get("done") else "") + "</div>"
+             + ((" <span class='bbdayrf' style='font-size:13px;color:#8a94a6'>&#10003; refunded" + (" &middot; showed up" if x.get("done") else "") + "</span>") if (x.get("refund") or x.get("full_refund"))
+                else (" <span style='font-size:13px;color:#1faa59'>&#10003; done</span>" if x.get("done") else "")) + "</div>"
              "<b style='font-size:18px'>" + e(x.get("name", "")) + "</b><br>" + e(x.get("service", "")) + "<br><span style='color:#556'>" + lab + " $%.2f</span>" % amt)
+        if isinstance(x.get("prop"), dict) and x["prop"].get("when"):
+            mine_ = x["prop"].get("by") == "owner"
+            c += ("<div class='bbdaymv' style='margin-top:6px;padding:8px 10px;border-radius:10px;background:#fff6e5;border:1px solid #f0c36d;font-size:14px'>&#128260; <b>Time change pending</b> &rarr; "
+                  + e(_bb_fmt(x["prop"]["when"])) + "<br><span style='color:#556'>" + ("Waiting on the customer" if mine_ else "The customer asked for this time &middot; your turn") + "</span> &middot; "
+                  "<a href='/neg/" + sid + "/" + rt + "?as=o' style='font-weight:700'>" + ("View" if mine_ else "Answer") + "</a></div>")
         if x.get("note"):
             c += "<br>&#128221; " + e(x["note"])
         if x.get("caddr"):
@@ -6051,6 +6077,21 @@ def bb_cday(sid, ds):
                      else "<a href='/refund/" + sid + "/" + rt + "' style='" + btn + "border:2px solid #e23b3b;color:#e23b3b'>&#128184; Refund</a>")
         return c + ("<div>" + acts + "</div>" if acts else "") + "</div>"
     rows = "".join(card(x, True) for x in due) + "".join(card(x, False) for x in rest)
+    for x in sorted([x for x in shop.get("noshows") or [] if isinstance(x, dict) and (x.get("when") or "")[:10] == ds], key=lambda x: x.get("when") or ""):
+        rf_ = float(x.get("refund") or 0)
+        rows += ("<div class='card bbdayns' id='bk-" + e(x.get("rt", "")) + "' style='text-align:left;border-left:6px solid #e23b3b;background:#fde8e8'>"
+                 "<div style='font-size:20px;font-weight:800'>" + e(_bb_c2_t12(x.get("when") or "")) + " <span style='font-size:13px;color:#e23b3b'>&#10007; no-show</span></div>"
+                 "<b style='font-size:18px'>" + e(x.get("name", "")) + "</b><br>" + e(x.get("service", ""))
+                 + ("<br><span style='color:#556'>Refunded $%.2f</span>" % rf_ if rf_ > 0 else ("<br><span style='color:#556'>Not refunded</span>" if float(x.get("fee") or 0) > 0 else ""))
+                 + ("<div style='margin-top:6px'><a href='tel:" + e(x["phone"]) + "' style='" + btn + "border:2px solid #1a6dff;color:#1a6dff'>&#128222; Call</a></div>" if x.get("phone") else "")
+                 + "</div>")
+    for x in sorted([x for x in shop.get("bookings") or [] if isinstance(x, dict) and isinstance(x.get("prop"), dict) and (x["prop"].get("when") or "")[:10] == ds
+                     and (x.get("when") or "")[:10] != ds], key=lambda x: x["prop"]["when"]):
+        rows += ("<div class='card bbdayin' style='text-align:left;border-left:6px dashed #f0a500;background:#fffbf0'>"
+                 "<div style='font-size:20px;font-weight:800'>" + e(_bb_c2_t12(x["prop"]["when"])) + " <span style='font-size:13px;color:#a06b00'>&#128260; pending move</span></div>"
+                 "<b style='font-size:18px'>" + e(x.get("name", "")) + "</b><br>" + e(x.get("service", ""))
+                 + "<br><span style='color:#556'>Now booked " + e(_bb_fmt(x.get("when", ""))) + " &middot; " + ("waiting on the customer" if x["prop"].get("by") == "owner" else "the customer asked for this time")
+                 + "</span><div style='margin-top:6px'><a href='/neg/" + sid + "/" + e(x.get("rt", "")) + "?as=o' style='font-weight:700'>Open</a></div></div>")
     for bl in shop.get("blocks") or []:
         if isinstance(bl, dict) and bl.get("date") == ds:
             span = (bl.get("start", "") + " - " + bl.get("end", "")) if bl.get("start") else "Whole day"
@@ -6248,7 +6289,7 @@ try:
                    "Cancelled": "キャンセル済み", "Refunded": "返金済み", "Visit complete": "来店完了", "Marked no-show": "無断キャンセル扱い", "NEW": "新着"})
 except Exception:
     pass
-def _bb_cu_booking_items(pairs=None):
+def _bb_cu_booking_items0(pairs=None):
     d = load()
     now = datetime.utcnow() - timedelta(hours=10)
     ns, soon = now.strftime("%Y-%m-%d %H:%M"), (now + timedelta(hours=36)).strftime("%Y-%m-%d %H:%M")
@@ -6283,13 +6324,16 @@ def _bb_cu_booking_items(pairs=None):
             continue
         if b.get("done"):
             add("d", "green", "&#9989;", "Visit complete")
+            if float(b.get("refund") or 0) > 0:
+                add("f", "green", "&#128184;", "Refunded")
             continue
         if float(b.get("refund") or 0) > 0:
             add("f", "green", "&#128184;", "Refunded")
         if w >= ns:
             add("b", "blue", "&#128197;", "Booking confirmed")
             if b.get("moved_from"):
-                add("mv" + w.replace(" ", "").replace(":", "").replace("-", ""), "yellow", "&#128260;", "Appointment moved")
+                add("mv" + w.replace(" ", "").replace(":", "").replace("-", ""), "yellow", "&#128260;", "Appointment moved"
+                    + "<span class='bbmvt' style='display:block;font-weight:400;font-size:13px;color:#556'>" + str(escape(_bb_fmt(b["moved_from"]))) + " &rarr; " + str(escape(_bb_fmt(w))) + "</span>")
             if w <= soon:
                 add("r", "yellow", "&#9200;", "Coming up soon")
     return out
@@ -6316,12 +6360,8 @@ def _bb_closed_path():
 def _bb_closed_all():
     try:
         if os.environ.get("DATABASE_URL"):
-            c = _bb_db()
-            try:
-                c.run("CREATE TABLE IF NOT EXISTS bb_closed (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-                r = c.run("SELECT v FROM bb_closed WHERE k = :k", k=_bb_dbkey())
-            finally:
-                c.close()
+            r = _bb_db_plain(["CREATE TABLE IF NOT EXISTS bb_closed (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
+                              "SELECT v FROM bb_closed WHERE k = " + _bb_sq(_bb_dbkey())])
             return json.loads(r[0][0]) if r else {}
         p = _bb_closed_path()
         return json.load(open(p)) if os.path.exists(p) else {}
@@ -6336,12 +6376,8 @@ def _bb_closed_add(sid, name, upcoming):
                  "rts": {str(b.get("rt")): {"when": b.get("when") or "", "paid": bool(b.get("pi"))} for b in upcoming if isinstance(b, dict) and b.get("rt")}}
     v = json.dumps(allc)
     if os.environ.get("DATABASE_URL"):
-        c = _bb_db()
-        try:
-            c.run("CREATE TABLE IF NOT EXISTS bb_closed (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-            c.run("INSERT INTO bb_closed (k, v) VALUES (:k, :v) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", k=_bb_dbkey(), v=v)
-        finally:
-            c.close()
+        _bb_db_plain(["CREATE TABLE IF NOT EXISTS bb_closed (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
+                      "INSERT INTO bb_closed (k, v) VALUES (" + _bb_sq(_bb_dbkey()) + ", " + _bb_sq(v) + ") ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"])
     else:
         open(_bb_closed_path(), "w").write(v)
 def _bb_closed_items():
@@ -6840,7 +6876,7 @@ def _bb_al_bar(sid, shop):
                                            "background:" + bg + ";border:2px solid " + bd + ";color:" + col + ";text-align:left'>" + html + " <b style='float:right'>&rsaquo;</b></a>")
     out = ""
     bk = [b for b in shop.get("bookings") or [] if isinstance(b, dict) and b.get("rt")]
-    due = sorted(b.get("when") or "" for b in bk if not b.get("done") and old <= (b.get("when") or "")[:10] and (b.get("when") or "") <= nows)
+    due = sorted(b.get("when") or "" for b in bk if not b.get("done") and not (b.get("refund") or b.get("full_refund")) and old <= (b.get("when") or "")[:10] and (b.get("when") or "") <= nows)
     if due:
         out += row("/cday/" + sid + "/" + due[0][:10], "#fff6d6", "#f0d36b", "#5a4500", "&#9888;&#65039; <b>" + str(len(due)) + (" appointment needs" if len(due) == 1 else " appointments need")
                    + " attention</b> &middot; did they show up?")
@@ -6948,7 +6984,7 @@ def _bb_own_new(shop, seen=None):
             out.append((w[:10], "new", b))
         elif (b.get("moved_at") or "") > seen:
             out.append((w[:10], "moved", b))
-        elif not b.get("done") and seen[:16] < w <= now:
+        elif not b.get("done") and not (b.get("refund") or b.get("full_refund")) and seen[:16] < w <= now:
             out.append((w[:10], "due", b))
     for b in shop.get("cancelled") or []:
         if isinstance(b, dict) and (b.get("cx_at") or "") > seen:
@@ -7214,10 +7250,15 @@ def _bb_nf_shops():
     return d
 def notify(subject, body, to=None):
     _bb_nf_tl.d = None
+    body0 = body
     try:
         for add in (_bb_nfx_online, _bb_nfx_housecall, _bb_nfx_directions, _bb_nfx_staffnote, _bb_nfx_calendar):
             body = add(subject, body, to)
         push_body = body
+        try:
+            _bb_ca_record(subject, body0, to)
+        except Exception as e:
+            print("alert panel:", e, flush=True)
         r = _bb_notify_send(subject, _bb_nfx_qr(subject, body, to), to)
         try:
             _bb_push_for(subject, push_body, to or GMAIL)
@@ -7248,5 +7289,192 @@ try:
                    "Your appointment": "ご予約内容", "When:": "日時：", "Paid:": "お支払い："})
 except Exception:
     pass
+# ===== BB CUSTOMER ALERTS =====
+# Every email sent to a customer is also saved (add-only) against their booking, so it shows in the
+# customer's Notifications panel and on the booking page - not just in their inbox.
+import hashlib as _bb_ca_hash, re as _bb_ca_re
+def _bb_ca_t():
+    k = _bb_dbkey()
+    return "bb_calerts" if k == "shops" else "bb_calerts_" + _bb_ca_re.sub(r"[^a-z0-9_]", "", k.lower())
+def _bb_ca_path():
+    k = _bb_dbkey()
+    return os.path.join(os.path.dirname(os.path.abspath(DB)), "calerts.jsonl" if k == "shops" else "calerts_" + _bb_ca_re.sub(r"[^a-z0-9_]", "", k.lower()) + ".jsonl")
+_BB_CA_SQL = " (k TEXT PRIMARY KEY, at TEXT, sid TEXT, rt TEXT, subj TEXT, body TEXT)"
+# The online database sits behind a connection pooler that sometimes loses "prepared statements"
+# ("unnamed prepared statement does not exist"). Plain queries with no parameters never use one,
+# so these helpers write values in as safely quoted text, and retry like load() does.
+def _bb_sq(v):
+    return "'" + str(v if v is not None else "").replace(chr(0), "").replace("'", "''") + "'"
+def _bb_db_plain(sqls):
+    def go():
+        c = _bb_db()
+        try:
+            r = None
+            for q in sqls:
+                r = c.run(q)
+            return r
+        finally:
+            try:
+                c.close()
+            except Exception:
+                pass
+    return _bb_with_retry(go)
+def _bb_ca_find(subject, body, to):
+    """Which customer booking an email is about: (sid, rt), or None (owner emails, waitlist, walk-ins...).
+    Owner emails link to the dashboard / owner pages; customer emails link to the booking. An owner who books
+    their own business (same email on both sides) still gets the customer emails in their panel."""
+    if _bb_ca_re.search(r"/(?:d|cday|ns|refund|refunds|nums|edit|block|clients)/|[?&]as=o\b", body or ""):
+        return None
+    known = _bb_ca_label(subject)[2] != str(escape(subject or ""))
+    d = load()
+    def bk(shop, rt=None):
+        for lst in ("bookings", "cancelled", "noshows"):
+            for b in (shop or {}).get(lst) or []:
+                if isinstance(b, dict) and b.get("rt") and (rt is None or str(b["rt"]) == rt) and (b.get("email") or "").strip().lower() == to:
+                    yield b
+    for sid, rt in _bb_ca_re.findall(r"/(?:m|neg|r|my|myqr)/([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)", body or ""):
+        shop = d.get(sid)
+        if isinstance(shop, dict) and next(bk(shop, rt), None):
+            return sid, rt
+    hits = []
+    for sid, shop in d.items():
+        if not isinstance(shop, dict) or not shop.get("name") or shop["name"] not in (subject or ""):
+            continue
+        if ((shop.get("email") or "").strip().lower() == to or to == (GMAIL or "").strip().lower()) and not known:
+            continue
+        for b in bk(shop):
+            hits.append((sid, b))
+    if not hits:
+        return None
+    if len(hits) > 1:
+        named = [h for h in hits if (h[1].get("when") and (h[1]["when"] in (body or "") or _bb_fmt(h[1]["when"]) in (body or "")))]
+        hits = named or sorted(hits, key=lambda h: abs((datetime.strptime(h[1].get("when") or "2000-01-01 00:00", "%Y-%m-%d %H:%M") - (datetime.utcnow() - timedelta(hours=10))).total_seconds()))
+    return hits[0][0], str(hits[0][1]["rt"])
+def _bb_ca_record(subject, body, to):
+    to = (to or "").strip().lower()
+    if not to:
+        return
+    hit = _bb_ca_find(subject, body, to)
+    if not hit:
+        return
+    at = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")
+    e = {"k": _bb_ca_hash.sha1("|".join([hit[0], hit[1], subject or "", body or "", at]).encode()).hexdigest()[:20], "at": at,
+         "sid": hit[0], "rt": hit[1], "subj": (subject or "")[:200], "body": (body or "")[:1500]}
+    if os.environ.get("DATABASE_URL"):
+        _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_ca_t() + _BB_CA_SQL,
+                      "INSERT INTO " + _bb_ca_t() + " (k, at, sid, rt, subj, body) VALUES (" + ", ".join(_bb_sq(e[x]) for x in ("k", "at", "sid", "rt", "subj", "body")) + ") ON CONFLICT (k) DO NOTHING"])
+        return
+    with open(_bb_ca_path(), "a") as f:
+        f.write(json.dumps(e) + "\n")
+def _bb_ca_read(pairs):
+    want = set((str(s), str(r)) for s, r in pairs)
+    if not want:
+        return {}
+    rows = []
+    if os.environ.get("DATABASE_URL"):
+        ok = [(a, b) for a, b in want if _bb_ca_re.match(r"^[A-Za-z0-9_-]{1,64}$", a) and _bb_ca_re.match(r"^[A-Za-z0-9_-]{1,64}$", b)]
+        if not ok:
+            return {}
+        where = " OR ".join("(sid = " + _bb_sq(a) + " AND rt = " + _bb_sq(b) + ")" for a, b in ok)
+        for x in _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_ca_t() + _BB_CA_SQL,
+                               "SELECT k, at, sid, rt, subj, body FROM " + _bb_ca_t() + " WHERE " + where]) or []:
+            rows.append(dict(zip(("k", "at", "sid", "rt", "subj", "body"), x)))
+    else:
+        p = _bb_ca_path()
+        if os.path.exists(p):
+            for line in open(p):
+                try:
+                    x = json.loads(line)
+                except Exception:
+                    continue
+                if (x.get("sid"), x.get("rt")) in want:
+                    rows.append(x)
+    out = {}
+    for x in sorted(rows, key=lambda x: x.get("at") or ""):
+        out.setdefault((x["sid"], x["rt"]), []).append(x)
+    return out
+def _bb_ca_label(subj):
+    s = subj or ""
+    if s.endswith(" is cancelled"):
+        return "grey", "&#128683;", "Cancelled"
+    if s.endswith(" was cancelled"):
+        return "grey", "&#128683;", "Cancelled (business closed)"
+    if s.startswith("Your booking at "):
+        return "blue", "&#128197;", "Booking confirmed"
+    if "wants to move your appointment" in s:
+        return "yellow", "&#128260;", "Time change requested"
+    if s.startswith("New time confirmed") or s.endswith(" was moved"):
+        return "yellow", "&#128260;", "Appointment moved"
+    if s.endswith(" stays the same"):
+        return "blue", "&#128197;", "Your time stays the same"
+    if s.startswith("You missed your appointment"):
+        return "red", "&#10060;", "Marked no-show"
+    if s.startswith("Refund from"):
+        return "green", "&#128184;", "Refunded"
+    if s.startswith("Reminder:"):
+        return "yellow", "&#9200;", "Coming up soon"
+    if s.startswith("Your repeat appointments"):
+        return "blue", "&#128257;", "Repeat appointments booked"
+    if s.startswith("Time for your next"):
+        return "blue", "&#128197;", "Time to book again?"
+    return "blue", "&#128276;", str(escape(s))
+def _bb_ca_detail(body):
+    t = _bb_ca_re.sub(r"https?://\S+", "", body or "")
+    t = _bb_ca_re.sub(r"^\s*Hi [^,\n]{0,60},", "", t)
+    t = _bb_ca_re.sub(r"[^.!?\n]*(link|here)\s*:\s*(\n|$)", "\n", t, flags=_bb_ca_re.I)
+    t = _bb_ca_re.sub(r"\s+", " ", t).strip()
+    return (t[:157] + "...") if len(t) > 160 else t
+def _bb_cu_booking_items(pairs=None):
+    pairs = list(_bb_ap_get() if pairs is None else pairs)
+    try:
+        sent = _bb_ca_read(pairs)
+    except Exception as ex:
+        print("alert panel read:", ex, flush=True)
+        sent = {}
+    if not sent:
+        return _bb_cu_booking_items0(pairs)
+    d = load()
+    out = []
+    for sid, rt in pairs:
+        der = _bb_cu_booking_items0([(sid, rt)])
+        em = sent.get((str(sid), str(rt))) or []
+        if not em:
+            out += der
+            continue
+        shop = d.get(sid)
+        b = None
+        for lst in ("noshows", "cancelled", "bookings"):
+            b = next((x for x in (shop or {}).get(lst) or [] if isinstance(x, dict) and str(x.get("rt")) == str(rt)), None)
+            if b:
+                break
+        if not isinstance(shop, dict) or not b:
+            out += der
+            continue
+        w = b.get("when") or ""
+        sub = str(escape(b.get("service", ""))) + " &middot; " + str(escape(shop.get("name", "")))
+        link = "/m/" + sid + "/" + rt
+        mine = []
+        for x in em:
+            col, icon, lab = _bb_ca_label(x.get("subj"))
+            det = _bb_ca_detail(x.get("body"))
+            stamp = str(escape(_bb_hub_when((x.get("at") or "")[:16]))) if x.get("at") else ""
+            full = lab + ("<span class='bbcadet' style='display:block;font-weight:400;font-size:13px;color:#556'>" + str(escape(det))
+                          + ("<span style='display:block;color:#8a94a6;font-size:12px'>" + stamp + "</span>" if stamp else "") + "</span>")
+            mine.append((rt + ":e" + str(x.get("k")), col, icon, full, sub, str(escape(_bb_hub_when(w))), link, w, lab))
+        labs = set(m[8] for m in mine)
+        if "Cancelled (business closed)" in labs or any(_bb_ca_re.search(r"\b(was|is|been) cancell?ed\b", x.get("body") or "", _bb_ca_re.I) for x in em):
+            labs.add("Cancelled")
+        keep = [x for x in der if x[3].split("<span")[0] not in labs]
+        first = [x for x in keep if x[0].endswith(":b")]
+        rest = [x for x in keep if not x[0].endswith(":b")]
+        out += first + [m[:8] for m in mine] + rest
+    return out
+try:
+    _BB_JA.update({"Time change requested": "日時変更のリクエスト", "Your time stays the same": "日時は変更なし", "Cancelled (business closed)": "キャンセル（店舗閉鎖）",
+                   "Repeat appointments booked": "定期予約を登録しました", "Time to book again?": "次回のご予約はいかがですか？"})
+except Exception:
+    pass
+# ===== END BB CUSTOMER ALERTS =====
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
