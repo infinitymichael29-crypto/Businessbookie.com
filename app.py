@@ -2121,7 +2121,7 @@ def _bb_push_for(subject, body, to):
             if (b.get("email") or "").strip().lower() == to:
                 cand += b.get("push", [])
         for s in cand:
-            if s.get("endpoint") and s["endpoint"] not in seen:
+            if s.get("endpoint") and s["endpoint"] not in seen and _bb_pk_alive(s):
                 seen.add(s["endpoint"])
                 subs.append(s)
     if not subs:
@@ -2153,8 +2153,8 @@ def bb_push_sub():
         tgt = next((b for b in shop.get("bookings", []) if b.get("rt") == rt), None)
         if not tgt:
             return "not found", 404
-    lst = [s for s in tgt.get("push", []) if s.get("endpoint") != sub["endpoint"]]
-    lst.append({"endpoint": sub["endpoint"], "keys": sub.get("keys", {})})
+    lst = [s for s in tgt.get("push", []) if s.get("endpoint") != sub["endpoint"] and _bb_pk_alive(s)]
+    lst.append({"endpoint": sub["endpoint"], "keys": sub.get("keys", {}), "at": (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")})
     tgt["push"] = lst[-5:]
     save(d)
     return "ok"
@@ -2190,7 +2190,7 @@ def _bb_push_box(sid, rt, role):
             "var s=await r.pushManager.getSubscription()||await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u(K)});"
             "var x=await fetch('/push/sub',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sub:s.toJSON(),sid:SID,rt:RT,role:ROLE})});"
             "say(x.ok?'\\u2705 Notifications are on for this device.':'Could not turn on notifications ('+(await x.text())+').')}catch(e){say('Could not turn on notifications: '+e)}};"
-            "window.bbPushTest=async function(){var x=await fetch('/push/test/'+SID,{method:'POST'});say(x.ok?'Test sent. It should pop up in a few seconds.':'Test failed: '+(await x.text()))};"
+            "window.bbPushTest=async function(){var x=await fetch('/push/test/'+SID,{method:'POST'});say(await x.text());if(window.bbPkCheck)bbPkCheck()};"
             "})();</script>")
 
 
@@ -7475,6 +7475,159 @@ try:
 except Exception:
     pass
 # ===== END BB CUSTOMER ALERTS =====
+
+# ===== BB PUSH KEEP HONEST =====
+# Phones whose alert sign-up has expired (Google answers 410 Gone) are remembered in their own add-only list,
+# so they are skipped, shown as "off", and never rewrite booking data from a background thread.
+import hashlib as _bb_pk_hash, threading as _bb_pk_th
+_BB_PK = {"t": 0, "dead": {}}
+_bb_pk_lock = _bb_pk_th.Lock()
+def _bb_pk_t():
+    k = _bb_dbkey()
+    return "bb_pushdead" if k == "shops" else "bb_pushdead_" + _bb_ca_re.sub(r"[^a-z0-9_]", "", k.lower())
+def _bb_pk_path():
+    k = _bb_dbkey()
+    return os.path.join(os.path.dirname(os.path.abspath(DB)), "pushdead.jsonl" if k == "shops" else "pushdead_" + _bb_ca_re.sub(r"[^a-z0-9_]", "", k.lower()) + ".jsonl")
+def _bb_pk_h(ep):
+    return _bb_pk_hash.sha1((ep or "").encode()).hexdigest()[:24]
+def _bb_pk_dead():
+    import time as _t
+    if _t.time() - _BB_PK["t"] < 30:
+        return _BB_PK["dead"]
+    out = {}
+    try:
+        if os.environ.get("DATABASE_URL"):
+            for h, at in _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_pk_t() + " (h TEXT PRIMARY KEY, at TEXT)",
+                                       "SELECT h, at FROM " + _bb_pk_t()]) or []:
+                out[h] = at
+        elif os.path.exists(_bb_pk_path()):
+            for line in open(_bb_pk_path()):
+                try:
+                    x = json.loads(line)
+                    out[x["h"]] = max(out.get(x["h"], ""), x["at"])
+                except Exception:
+                    pass
+    except Exception as ex:
+        print("push dead read:", ex, flush=True)
+        return _BB_PK["dead"]
+    with _bb_pk_lock:
+        _BB_PK["dead"], _BB_PK["t"] = out, _t.time()
+    return out
+def _bb_pk_mark(ep):
+    h, at = _bb_pk_h(ep), (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")
+    with _bb_pk_lock:
+        _BB_PK["dead"][h] = at
+    try:
+        if os.environ.get("DATABASE_URL"):
+            _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_pk_t() + " (h TEXT PRIMARY KEY, at TEXT)",
+                          "INSERT INTO " + _bb_pk_t() + " (h, at) VALUES (" + _bb_sq(h) + ", " + _bb_sq(at) + ") ON CONFLICT (h) DO UPDATE SET at = EXCLUDED.at"])
+        else:
+            with open(_bb_pk_path(), "a") as f:
+                f.write(json.dumps({"h": h, "at": at}) + "\n")
+    except Exception as ex:
+        print("push dead save:", ex, flush=True)
+def _bb_pk_alive(s):
+    """A sign-up counts unless it expired AFTER it was made (signing up again brings it back)."""
+    if not isinstance(s, dict) or not s.get("endpoint"):
+        return False
+    if s["endpoint"] in _BB_PUSH_DEAD and not s.get("at"):
+        return False
+    at = _bb_pk_dead().get(_bb_pk_h(s["endpoint"]))
+    return not at or (s.get("at") or "") > at
+_bb_push_send0 = _bb_push_send
+def _bb_push_send(subs, title, body, url):
+    mine = getattr(_bb_pd_tl, "res", None) is None
+    if mine:
+        _bb_pd_tl.res = {"tried": 0, "ok": 0, "err": 0, "dead": []}
+    st = _bb_pd_tl.res
+    n0 = len(st["dead"])
+    try:
+        _bb_push_send0(subs, title, body, url)
+        for ep in st["dead"][n0:]:
+            _bb_pk_mark(ep)
+    finally:
+        if mine:
+            _bb_pd_tl.res = None
+def _bb_dm_pushon(shop, b):
+    k = _bb_msg_key(b)
+    for lst in ("bookings", "cancelled", "noshows"):
+        for x in shop.get(lst) or []:
+            if isinstance(x, dict) and k and _bb_msg_key(x) == k and any(_bb_pk_alive(s) for s in x.get("push") or []):
+                return True
+    return False
+def _bb_pk_owner_subs(sid):
+    d = load()
+    shop = d.get(sid) or {}
+    em = (shop.get("email") or "").strip().lower()
+    out, seen = [], set()
+    for v in d.values():
+        if isinstance(v, dict) and em and (v.get("email") or "").strip().lower() == em:
+            for s in v.get("push") or []:
+                if _bb_pk_alive(s) and s["endpoint"] not in seen:
+                    seen.add(s["endpoint"])
+                    out.append(s)
+    return out
+def bb_push_test2(sid):
+    from flask import Response
+    out = _bb_push_test_text(sid)
+    return Response(out[0], status=out[1], mimetype="text/plain")
+def _bb_push_test_text(sid):
+    d = load()
+    shop = d.get(sid)
+    if not shop or not _bb_ok(sid, "", shop):
+        return "Log in first.", 403
+    subs = _bb_pk_owner_subs(sid)
+    if not subs:
+        return "No phones are signed up for alerts yet. Tap Turn on notifications first.", 200
+    _bb_pd_tl.res = {"tried": 0, "ok": 0, "err": 0, "dead": []}
+    _bb_push_send(subs, "Business-Bookie test", "Notifications are working for " + shop.get("name", "your business") + ".", request.host_url + "d/" + sid)
+    r = _bb_pd_tl.res
+    _bb_pd_tl.res = None
+    parts = []
+    if r["ok"]:
+        parts.append("✅ Delivered to " + str(r["ok"]) + " phone" + ("" if r["ok"] == 1 else "s") + ". It should pop up in a few seconds.")
+    if r["dead"]:
+        parts.append("⚠️ " + str(len(r["dead"])) + " sign-up" + ("" if len(r["dead"]) == 1 else "s") + " had expired and " + ("was" if len(r["dead"]) == 1 else "were") + " removed. If this phone didn't buzz, tap Turn on notifications again.")
+    if r["err"]:
+        parts.append("❌ " + str(r["err"]) + " phone" + ("" if r["err"] == 1 else "s") + " refused it. Check that notifications are allowed for this site in the phone's settings.")
+    return (" ".join(parts) or "Nothing was sent."), 200
+app.view_functions["bb_push_test"] = bb_push_test2
+def _bb_pk_banner(resp):
+    try:
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        pp = request.path.strip("/").split("/")
+        if len(pp) != 2 or pp[0] != "d":
+            return resp
+        h = resp.get_data(as_text=True)
+        if "id='bbpush'" not in h or "id='bbpkoff'" in h:
+            return resp
+        hs = json.dumps([_bb_pk_h(s["endpoint"]) for s in _bb_pk_owner_subs(pp[1])])
+        ban = ("<div id='bbpkoff' style='display:none;background:#fff6c2;border:2px solid #ffd400;color:#5a4a00;border-radius:12px;padding:12px;margin:8px 0;font-weight:700;text-align:left'>"
+               "&#128277; <span>Alerts are off on this phone.</span><br><span style='font-weight:400;font-size:14px'>You won't hear about new bookings or changes until you turn them on.</span>"
+               "<button type='button' onclick='bbPkOn()' style='display:block;width:100%;margin-top:8px'>&#128276; Turn on alerts on this phone</button></div>"
+               "<script>(function(){var H=" + hs + ";"
+               "async function sha(t){try{var b=await crypto.subtle.digest('SHA-1',new TextEncoder().encode(t));return Array.from(new Uint8Array(b)).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('').slice(0,24)}catch(e){return ''}}"
+               "window.bbPkCheck=async function(){var el=document.getElementById('bbpkoff');if(!el)return;"
+               "if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){el.style.display='none';return}"
+               "var on=false;try{if(Notification.permission==='granted'){var r=await navigator.serviceWorker.getRegistration('/sw.js')||await navigator.serviceWorker.getRegistration();"
+               "var s=r&&await r.pushManager.getSubscription();if(s){var x=await sha(s.endpoint);on=H.indexOf(x)>=0||window.bbPkJust===s.endpoint}}}catch(e){}"
+               "el.style.display=on?'none':'block'};"
+               "window.bbPkOn=async function(){if(window.bbPush){await bbPush();try{var r=await navigator.serviceWorker.getRegistration('/sw.js');var s=r&&await r.pushManager.getSubscription();if(s)window.bbPkJust=s.endpoint}catch(e){}}bbPkCheck()};"
+               "if(document.readyState!=='loading')bbPkCheck();else document.addEventListener('DOMContentLoaded',bbPkCheck)})();</script>")
+        i = h.find("<div id='bbcal2'>")
+        if i < 0:
+            return resp
+        resp.set_data(h[:i] + ban + h[i:])
+    except Exception as ex:
+        print("alerts banner:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_pk_banner)   # runs last, after the alerts box is added
+try:
+    _BB_JA.update({"Alerts are off on this phone.": "このスマホの通知はオフです。"})
+except Exception:
+    pass
+# ===== END BB PUSH KEEP HONEST =====
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
