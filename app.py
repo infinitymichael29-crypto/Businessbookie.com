@@ -7629,5 +7629,104 @@ except Exception:
     pass
 # ===== END BB PUSH KEEP HONEST =====
 
+# ===== BB TIME CHANGE ON CARDS =====
+def _bb_tc_pending(b):
+    p = b.get("prop") if isinstance(b, dict) else None
+    return p if isinstance(p, dict) and p.get("when") else None
+def _bb_tc_box(sid, b):
+    p = _bb_tc_pending(b)
+    if not p:
+        return ""
+    e = lambda v: str(escape(str(v or "")))
+    rt = e(b.get("rt"))
+    if p.get("by") == "owner":
+        f = lambda act, lab, sty: ("<form method='post' action='/neg/" + sid + "/" + rt + "' style='flex:1;margin:0'><input type='hidden' name='act' value='" + act + "'>"
+                                   "<input type='hidden' name='back' value='/appointments'><button style='width:100%;margin:0;" + sty + "'>" + lab + "</button></form>")
+        return ("<div class='bbtcbox' style='margin:-2px 0 10px;padding:10px 12px;border-radius:0 0 12px 12px;background:#fff6e5;border:2px solid #f0a500;border-top:0;text-align:left'>"
+                "<b>&#128260; <span>Time change requested</span></b><br>" + e(b.get("service")) + " &rarr; <b>" + e(_bb_fmt(p["when"])) + "</b>"
+                "<div style='font-size:13px;color:#556'>Now booked: " + e(_bb_fmt(b.get("when"))) + "</div>"
+                "<div style='display:flex;gap:8px;margin-top:8px'>" + f("accept", "&#9989; Accept", "background:#1faa59")
+                + f("keep", "Keep my time", "background:#fff;color:#1a6dff;border:2px solid #1a6dff") + "</div>"
+                "<a href='/neg/" + sid + "/" + rt + "?as=c' style='display:block;margin-top:6px;font-size:14px;font-weight:700'>Suggest a different time</a></div>")
+    return ("<div class='bbtcbox' style='margin:-2px 0 10px;padding:8px 12px;border-radius:0 0 12px 12px;background:#f2f4f7;border:1px solid #d7e0f0;border-top:0;font-size:14px;text-align:left'>"
+            "&#9203; You asked for <b>" + e(_bb_fmt(p["when"])) + "</b> &middot; waiting on the business</div>")
+_bb_ap_card_prev = _bb_ap_card
+def _bb_ap_card(rows, limit=None):
+    rows = sorted(rows, key=lambda r: 0 if (_bb_tc_pending(r[3]) or {}).get("by") == "owner" else 1)
+    h = ""
+    for r in (rows[:limit] if limit else rows):
+        h += _bb_ap_card_prev([r]) + _bb_tc_box(r[1], r[3])
+    return h
+_bb_ap_compact_prev = _bb_ap_compact
+def _bb_ap_compact(rows, limit=None):
+    rows = sorted(rows, key=lambda r: 0 if (_bb_tc_pending(r[3]) or {}).get("by") == "owner" else 1)
+    h = ""
+    for r in (rows[:limit] if limit else rows):
+        h += _bb_ap_compact_prev([r])
+        if (_bb_tc_pending(r[3]) or {}).get("by") == "owner":
+            h += ("<a class='bbtctag' href='/m/" + r[1] + "/" + str(escape(r[3]["rt"])) + "' style='display:block;margin:0 0 4px;padding:4px 8px;border-radius:8px;background:#fff6e5;"
+                  "color:#7a5200;font-size:13px;font-weight:700;text-decoration:none'>&#128260; Time change requested &rarr; " + str(escape(_bb_fmt(r[3]["prop"]["when"]))) + "</a>")
+    return h
+def _bb_tc_waiting():
+    """(sid, rt) of this person's bookings where the business asked for a new time and nobody answered yet."""
+    out = []
+    try:
+        d = load()
+        for sid, rt in _bb_ap_get():
+            b = next((x for x in (d.get(sid) or {}).get("bookings") or [] if isinstance(x, dict) and str(x.get("rt")) == str(rt)), None)
+            if (_bb_tc_pending(b) or {}).get("by") == "owner":
+                out.append((sid, str(rt)))
+    except Exception as ex:
+        print("time change count:", ex, flush=True)
+    return out
+_bb_nt_unread_prev = _bb_nt_unread
+def _bb_nt_unread():
+    items, read, gone, first = _bb_nt_state()
+    unread = [i for i in items if i[0] not in read]
+    have = {i[0].split(":")[0] for i in unread}
+    return len(unread) + len([1 for sid, rt in _bb_tc_waiting() if rt not in have])
+_bb_cu_booking_items_tcprev = _bb_cu_booking_items
+def _bb_cu_booking_items(pairs=None):
+    items = _bb_cu_booking_items_tcprev(pairs)
+    try:
+        d = load()
+    except Exception:
+        return items
+    def pend(rt):
+        for shop in d.values():
+            if isinstance(shop, dict):
+                for b in shop.get("bookings") or []:
+                    if isinstance(b, dict) and str(b.get("rt")) == rt:
+                        return (_bb_tc_pending(b) or {}).get("by") == "owner"
+        return False
+    out, i = [], 0
+    while i < len(items):
+        rt = items[i][0].split(":")[0]
+        j = i
+        while j < len(items) and items[j][0].split(":")[0] == rt:
+            j += 1
+        grp = items[i:j]
+        if pend(rt):
+            req = [x for x in grp if x[3].startswith("Time change requested")]
+            if req:
+                grp = [x for x in grp if x not in req] + req[-1:]
+        out += grp
+        i = j
+    return out
+@app.after_request
+def _bb_tc_back(resp):
+    try:
+        if (request.method == "POST" and request.path.startswith("/neg/") and request.form.get("back") == "/appointments"
+                and resp.status_code == 200 and request.form.get("act") in ("accept", "keep")):
+            return _bb_rd("/appointments")
+    except Exception as ex:
+        print("time change back:", ex, flush=True)
+    return resp
+try:
+    _BB_JA.update({"Keep my time": "今の時間のままにする", "Suggest a different time": "別の時間を提案する"})
+except Exception:
+    pass
+# ===== END BB TIME CHANGE ON CARDS =====
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
