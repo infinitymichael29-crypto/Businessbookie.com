@@ -386,7 +386,7 @@ def mine():
         up = len([b for b in bk if str(b.get("when", "")) >= _now])
         ok = _bb_listed(v)
         tag = "<span style='color:#1faa59;font-weight:700'>&#9679; Live</span>" if ok else ("<span style='color:#b37400;font-weight:700'>&#9888; Needs email confirmation</span>" if not v.get("live", True) else "<span style='color:#b37400;font-weight:700'>&#9888; Needs payments connected</span>")
-        nn = len(_bb_own_new(v))
+        nn = len(_bb_own_new(v, _bb_dev_seen(sid)[0])) + len(_bb_asked(v))
         pill = ("<span class='bbownnew' style='display:inline-block;min-width:20px;text-align:center;background:#e23b3b;color:#fff;border-radius:999px;font-size:13px;"
                 "font-weight:800;padding:1px 7px;margin-left:4px;vertical-align:middle'>" + str(min(nn, 99)) + "</span> ") if nn else ""
         return "<div class='card' style='border-left:6px solid " + ("#1faa59" if ok else "#f0a500;background:#fff8e1") + "'><b style='font-size:18px'>" + escape(v.get("name", "")) + "</b> " + pill + tag + "<br><span style='color:#667'>" + escape(v.get("type", "")) + "</span><div style='display:flex;gap:24px;margin:10px 0'><div><div style='" + _num + "'>" + str(up) + "</div>upcoming</div><div><div style='" + _num + "'>" + str(len(bk)) + "</div>total bookings</div></div><div style='display:flex;gap:8px'><a style='" + _bs + "' href='/d/" + sid + "?pw=" + quote(pw) + "'>Open</a></div></div>"
@@ -5923,7 +5923,7 @@ def _bb_cal2(shop, sid, due):
     while mth > 12: y, mth = y + 1, mth - 12
     while mth < 1: y, mth = y - 1, mth + 12
     duek = set(x.get("rt") for x in due if x.get("rt"))
-    base = _bb_own_base(shop)
+    base = _bb_own_base_dev(sid, shop)
     newd = set(ds for ds, kind, x in _bb_own_new(shop, base) if kind != "cancelled") if base else set()
     cnt, ring, donec, nsc, refc = {}, {}, {}, {}, {}
     movc = {}
@@ -6881,11 +6881,14 @@ def _bb_al_bar(sid, shop):
     if due:
         out += row("/cday/" + sid + "/" + due[0][:10], "#fff6d6", "#f0d36b", "#5a4500", "&#9888;&#65039; <b>" + str(len(due)) + (" appointment needs" if len(due) == 1 else " appointments need")
                    + " attention</b> &middot; did they show up?")
-    base = _bb_own_base(shop)
+    base = _bb_own_base_dev(sid, shop)
     for ds, kind, x in (_bb_own_new(shop, base) if base else []):
         if kind == "cancelled":
             out += row("/cday/" + sid + "/" + ds, "#f2f4f7", "#c3cad6", "#334", "&#128683; <b>" + e(x.get("name") or "A customer") + " cancelled</b> &middot; "
                        + e(_bb_hub_when(x.get("when") or "")))
+    for x in _bb_asked(shop):
+        out += row("/neg/" + sid + "/" + e(x.get("rt", "")) + "?as=o", "#fff6e5", "#f0a500", "#5a4500", "&#128260; <b>" + e(x.get("name") or "A customer")
+                   + " asked to move</b> to " + e(_bb_fmt(x["prop"]["when"])) + " &middot; your turn")
     nt = len([b for b in bk if (b.get("when") or "")[:10] == today])
     if nt:
         out += row("/cday/" + sid + "/" + today, "#eef3ff", "#1a6dff", "#0b1f4d", "&#128197; <b>" + str(nt) + (" appointment" if nt == 1 else " appointments") + " today</b>")
@@ -7915,6 +7918,46 @@ def _bb_la_after(resp):
     return resp
 app.after_request_funcs.setdefault(None, []).insert(0, _bb_la_after)
 # ===== END BB LAST ALERT =====
+
+# ===== BB SEEN PER DEVICE =====
+# "New since you last looked" is remembered per device (cookie), so a dashboard left open on another device
+# (it refreshes every 30 seconds) can't clear this phone's red numbers.
+def _bb_dev_seen(sid):
+    try:
+        v = request.cookies.get("bbsn_" + sid) or ""
+    except Exception:
+        v = ""
+    a, _, b = v.partition("|")
+    return (a or None), (b or None)
+def _bb_own_base_dev(sid, shop):
+    seen, prev = _bb_dev_seen(sid)
+    if not seen:
+        return _bb_own_base(shop)
+    if seen < (datetime.utcnow() - timedelta(hours=10, minutes=10)).strftime("%Y-%m-%d %H:%M:%S"):
+        return seen
+    return prev or seen
+def _bb_asked(shop):
+    """Bookings where the customer asked for a new time and the business hasn't answered yet."""
+    return [b for b in (shop or {}).get("bookings") or [] if isinstance(b, dict) and isinstance(b.get("prop"), dict)
+            and b["prop"].get("by") == "customer" and b["prop"].get("when")]
+def _bb_sn_after(resp):
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method != "GET" or len(pp) != 2 or pp[0] != "d" or resp.status_code != 200 or not _bb_sess.get("own_" + pp[1]):
+            return resp
+        sid = pp[1]
+        if not _bb_ca_re.fullmatch(r"[A-Za-z0-9_-]{1,64}", sid):
+            return resp
+        old, prev = _bb_dev_seen(sid)
+        nows = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S.%f")
+        if not old or old < (datetime.utcnow() - timedelta(hours=10, minutes=10)).strftime("%Y-%m-%d %H:%M:%S"):
+            prev = old or nows
+        resp.set_cookie("bbsn_" + sid, nows + "|" + (prev or nows), max_age=2 * 365 * 86400, samesite="Lax", httponly=True)
+    except Exception as ex:
+        print("seen per device:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).append(_bb_sn_after)
+# ===== END BB SEEN PER DEVICE =====
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
