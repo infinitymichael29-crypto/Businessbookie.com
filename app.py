@@ -7728,5 +7728,74 @@ except Exception:
     pass
 # ===== END BB TIME CHANGE ON CARDS =====
 
+# ===== BB KEEP AFTER CLEAR =====
+# Check my appointments only knew bookings saved on this phone, plus the owner's own bookings while logged in.
+# Now every booking this phone shows you (notifications, appointments, alert taps, logged-in pages) is also saved on
+# the phone, so clearing notifications or logging out never loses it.
+_BB_KC_PATHS = ("/notifications", "/appointments", "/inbox/open", "/inbox/x", "/inbox/clear", "/mine", "/")
+def _bb_kc_after(resp):
+    try:
+        if request.method != "GET" or request.path.startswith(("/appointments/forget", "/logout")):
+            return resp
+        if request.path not in _BB_KC_PATHS and not _bb_oh_owned():
+            return resp
+        have = _bb_ap_cookie_pairs()
+        allp = _bb_ap_get()
+        new = [x for x in allp if x not in have]
+        if not new:
+            return resp
+        val = ",".join(a + ":" + b for a, b in (new + have)[:30])
+        resp.set_cookie("bb_my", val, max_age=2 * 365 * 86400, samesite="Lax", httponly=True)
+    except Exception as ex:
+        print("keep my bookings:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).append(_bb_kc_after)
+# ===== END BB KEEP AFTER CLEAR =====
+
+# ===== BB HOME ON APPOINTMENTS =====
+def _bb_hm_href():
+    try:
+        own = _bb_oh_owned()
+        if own:
+            d = load()
+            em = next(((d[x].get("email") or "") for x in own if isinstance(d.get(x), dict) and d[x].get("email")), "")
+            if em:
+                return "/mine?em=" + quote(em)
+    except Exception as ex:
+        print("home button:", ex, flush=True)
+    return "/?home=1"
+def _bb_hm_btn(full=False):
+    sty = ("display:block;text-align:center;padding:13px;margin:12px 0;" if full else "display:inline-block;padding:8px 14px;") + \
+          "border:2px solid #1a6dff;color:#1a6dff;background:#fff;border-radius:12px;text-decoration:none;font-weight:800"
+    return "<a class='bbhomebtn' href='" + _bb_hm_href() + "' style='" + sty + "'>&#127968; <span>Home</span></a>"
+_bb_ib_back_prev = _bb_ib_back
+def _bb_ib_back():
+    return ("<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 0'>"
+            + _bb_ib_back_prev().replace("<p>", "<p style='margin:0'>", 1) + _bb_hm_btn() + "</div>")
+def _bb_hm_after(resp):
+    try:
+        if request.method != "GET" or request.path != "/appointments" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        h = resp.get_data(as_text=True)
+        if "class='bbhomebtn'" in h:
+            return resp
+        import re as _r
+        h = _r.sub(r"<h1>([^<]*)</h1>", lambda g: "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px'><h1 style='margin:6px 0'>"
+                   + g.group(1) + "</h1>" + _bb_hm_btn() + "</div>", h, count=1)
+        i = h.find("<a href='/find' style='display:block;text-align:center;padding:13px")
+        j = h.find("</a>", i) if i >= 0 else -1
+        if j >= 0:
+            h = h[:j + 4] + _bb_hm_btn(True) + h[j + 4:]
+        resp.set_data(h)
+    except Exception as ex:
+        print("home button:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_hm_after)
+try:
+    _BB_JA.update({"Home": "ホーム"})
+except Exception:
+    pass
+# ===== END BB HOME ON APPOINTMENTS =====
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
