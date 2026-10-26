@@ -6668,7 +6668,8 @@ def _bb_push_send(subs, title, body, url):
             continue
         try:
             webpush(subscription_info=s, data=data, vapid_private_key=priv,
-                    vapid_claims={"sub": "mailto:" + globals().get("_BB_CONTACT", "infinitymichael29@gmail.com")}, timeout=10)
+                    vapid_claims={"sub": "mailto:" + globals().get("_BB_CONTACT", "infinitymichael29@gmail.com")}, timeout=10,
+                    ttl=86400, headers={"Urgency": "high"})   # wait up to a day for a sleeping phone; wake it
             st["ok"] += 1
         except WebPushException as e:
             code = getattr(getattr(e, "response", None), "status_code", None)
@@ -7796,6 +7797,124 @@ try:
 except Exception:
     pass
 # ===== END BB HOME ON APPOINTMENTS =====
+
+# ===== BB LAST ALERT =====
+# Every phone alert remembers its result per recipient, so the business page can show what happened to the last one.
+import threading as _bb_la_th
+_bb_la_lock = _bb_la_th.Lock()
+def _bb_la_t():
+    k = _bb_dbkey()
+    return "bb_lastalert" if k == "shops" else "bb_lastalert_" + _bb_ca_re.sub(r"[^a-z0-9_]", "", k.lower())
+def _bb_la_path():
+    return os.path.join(os.path.dirname(os.path.abspath(DB)), _bb_la_t() + ".json")
+def _bb_la_save(to, info):
+    to = (to or "").strip().lower()
+    if not to:
+        return
+    v = json.dumps(info)
+    try:
+        if os.environ.get("DATABASE_URL"):
+            _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_la_t() + " (k TEXT PRIMARY KEY, v TEXT)",
+                          "INSERT INTO " + _bb_la_t() + " (k, v) VALUES (" + _bb_sq(to) + ", " + _bb_sq(v) + ") ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"])
+        else:
+            p = _bb_la_path()
+            with _bb_la_lock:
+                allv = {}
+                if os.path.exists(p):
+                    with open(p) as f:
+                        allv = json.load(f)
+                allv[to] = info
+                with open(p, "w") as f:
+                    json.dump(allv, f)
+    except Exception as ex:
+        print("last alert save:", ex, flush=True)
+def _bb_la_get(to):
+    to = (to or "").strip().lower()
+    try:
+        if os.environ.get("DATABASE_URL"):
+            r = _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_la_t() + " (k TEXT PRIMARY KEY, v TEXT)",
+                              "SELECT v FROM " + _bb_la_t() + " WHERE k = " + _bb_sq(to)])
+            return json.loads(r[0][0]) if r else None
+        p = _bb_la_path()
+        if not os.path.exists(p):
+            return None
+        with open(p) as f:
+            return json.load(f).get(to)
+    except Exception as ex:
+        print("last alert read:", ex, flush=True)
+        return None
+def _bb_push_for(subject, body, to):
+    import re, threading
+    body = _bb_push_link_first(body)
+    if not os.environ.get("VAPID_PRIVATE"):
+        return
+    to = (to or "").strip().lower()
+    if not to:
+        return
+    subs, seen = [], set()
+    for shop in load().values():
+        if not isinstance(shop, dict):
+            continue
+        cand = list(shop.get("push", [])) if (shop.get("email") or "").strip().lower() == to else []
+        for b in shop.get("bookings", []):
+            if isinstance(b, dict) and (b.get("email") or "").strip().lower() == to:
+                cand += b.get("push", [])
+        for s in cand:
+            if isinstance(s, dict) and s.get("endpoint") and s["endpoint"] not in seen and _bb_pk_alive(s):
+                seen.add(s["endpoint"])
+                subs.append(s)
+    at = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+    if not subs:
+        _bb_la_save(to, {"subj": subject[:120], "at": at, "phones": 0, "ok": 0, "dead": 0, "err": 0})
+        return
+    m = re.search(r"https?://\S+", body or "")
+    url = m.group(0) if m else "/"
+    text = re.sub(r"https?://\S+", "", body or "").replace("\n", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    def go():
+        _bb_pd_tl.res = {"tried": 0, "ok": 0, "err": 0, "dead": []}
+        try:
+            _bb_push_send(subs, subject, text, url)
+        finally:
+            r = _bb_pd_tl.res or {}
+            _bb_pd_tl.res = None
+            _bb_la_save(to, {"subj": subject[:120], "at": at, "phones": len(subs), "ok": r.get("ok", 0), "dead": len(r.get("dead", [])), "err": r.get("err", 0)})
+    threading.Thread(target=go, daemon=True).start()
+def _bb_la_line(email):
+    a = _bb_la_get(email)
+    if not a:
+        return ""
+    e = lambda v: str(escape(str(v)))
+    if a.get("ok"):
+        st, col = "&#9989; delivered to " + str(a["ok"]) + " phone" + ("" if a["ok"] == 1 else "s"), "#137a3f"
+    elif not a.get("phones"):
+        st, col = "&#9888;&#65039; no phones signed up for alerts", "#8a6d00"
+    elif a.get("dead") and not a.get("err"):
+        st, col = "&#9888;&#65039; your phone's sign-up had expired, tap Turn on alerts again", "#8a6d00"
+    else:
+        st, col = "&#10060; Google refused it (check the phone's notification settings)", "#e23b3b"
+    return ("<div class='bblastalert' style='font-size:13px;color:#556;background:#f4f7ff;border:1px solid #d7e0f0;border-radius:10px;padding:8px 10px;margin:8px 0;text-align:left'>"
+            "&#128276; <b>Last alert to you:</b> " + e(a.get("subj", "")) + " &middot; " + e(_bb_hub_when(a.get("at", ""))) + "<br><span style='color:" + col + ";font-weight:700'>" + st + "</span></div>")
+def _bb_la_after(resp):
+    try:
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        pp = request.path.strip("/").split("/")
+        if len(pp) != 2 or pp[0] != "d" or not _bb_sess.get("own_" + pp[1]):
+            return resp
+        h = resp.get_data(as_text=True)
+        if "class='bblastalert'" in h:
+            return resp
+        shop = load().get(pp[1]) or {}
+        line = _bb_la_line(shop.get("email") or GMAIL)
+        i = h.find("<div id='bbcal2'>")
+        if line and i >= 0:
+            resp.set_data(h[:i] + line + h[i:])
+    except Exception as ex:
+        print("last alert line:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).insert(0, _bb_la_after)
+# ===== END BB LAST ALERT =====
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
