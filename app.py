@@ -130,7 +130,8 @@ def book_page(sid):
     if rv:
         avg = sum(r["stars"] for r in rv) / len(rv)
         full = int(round(avg))
-        revs = "<div class='card'><b>" + "&#9733;" * full + "&#9734;" * (5 - full) + " " + ("%.1f" % avg) + "</b> (" + str(len(rv)) + " reviews)" + "".join("<p>" + "&#9733;" * r["stars"] + " " + str(escape(r.get("text", ""))) + " <i>- " + str(escape(r.get("name", ""))) + "</i></p>" for r in reversed(rv[-10:])) + "</div>"
+        revs = ("<div class='card bbrating' style='text-align:center'><span style='color:#f0a500;font-size:22px'>" + "&#9733;" * full + "&#9734;" * (5 - full) + "</span> <b style='font-size:18px'>"
+                + ("%.1f" % avg) + "</b> <span style='color:#556'>(" + str(len(rv)) + " rating" + ("" if len(rv) == 1 else "s") + ")</span></div>")
     else:
         revs = ""
     ow = ("<p><b>with " + str(escape(shop.get("owner", ""))) + "</b></p>") if shop.get("owner") else ""
@@ -754,7 +755,7 @@ def leave_review(sid, rt):
         appt = datetime.fromisoformat(str(b.get("when", ""))[:16])
     except Exception:
         appt = None
-    if appt and now < appt:
+    if appt and now < appt and not b.get("done"):
         return S + "<h1>Almost!</h1><p>You can leave a review after your appointment (" + str(escape(b["when"])) + "). Save this link and come back then.</p><a href='/b/" + sid + "'>Back</a>"
     if request.method == "POST":
         try:
@@ -764,14 +765,18 @@ def leave_review(sid, rt):
         if st < 1 or st > 5:
             return S + "<h1>Please pick 1 to 5 stars</h1><a href='/r/" + sid + "/" + rt + "'>Back</a>"
         first = (b.get("name", "") or "Customer").split()[0]
-        txt = request.form.get("text", "")[:500]
-        shop.setdefault("reviews", []).append({"stars": st, "text": txt, "name": first, "service": b.get("service", "")})
+        shop.setdefault("reviews", []).append({"stars": st, "name": first, "service": b.get("service", "")})
         b["reviewed"] = True
         save(d)
-        notify("New " + str(st) + "-star review for " + shop["name"], first + ": " + txt, shop.get("email") or GMAIL)
-        return S + "<h1>Thanks for your review!</h1><p>It's now on " + name + "'s page.</p><a href='/b/" + sid + "'>See it</a>"
-    stars = "".join("<label style='font-size:24px;margin-right:8px'><input type='radio' name='stars' value='" + str(i) + "' required> " + str(i) + "&#9733;</label>" for i in range(1, 6))
-    return S + "<h1>Review " + name + "</h1><p>How was your " + str(escape(b.get("service", ""))) + "?</p><form method='post'>" + stars + "<textarea name='text' rows='4' style='width:100%' placeholder='Tell others about your visit (optional)'></textarea><button>Submit review</button></form>"
+        notify("New " + str(st) + "-star rating for " + shop["name"], first + " gave " + str(st) + " star" + ("" if st == 1 else "s") + " for " + b.get("service", "their visit") + ".",
+               shop.get("email") or GMAIL)
+        return (S + "<h1>Thanks for rating " + name + "!</h1><p style='font-size:28px;color:#f0a500'>" + "&#9733;" * st + "&#9734;" * (5 - st) + "</p>"
+                "<a href='/b/" + sid + "' style='display:block;text-align:center;padding:13px;margin:12px 0;background:#1a6dff;color:#fff;border-radius:12px;text-decoration:none;font-weight:800'>&#128197; <span>Book again</span></a>")
+    stars = "".join("<button class='bbstar' name='stars' value='" + str(i) + "' aria-label='" + str(i) + " stars' style='flex:1;margin:0;padding:6px 0;background:none;border:0;color:#f0a500;font-size:44px;line-height:1;cursor:pointer'>&#9733;"
+                    "<span style='display:block;font-size:13px;color:#556'>" + str(i) + "</span></button>" for i in range(1, 6))
+    return (S + "<h1>Rate " + name + "</h1><p>How was your " + str(escape(b.get("service", ""))) + "? <span>Tap a star.</span></p>"
+            "<form method='post' style='display:flex;gap:4px;max-width:420px;margin:10px auto'>" + stars + "</form>"
+            "<p style='font-size:13px;color:#556;text-align:center'><span>1 = poor &middot; 5 = great</span></p>")
 
 
 @app.route("/done/<sid>")
@@ -7958,6 +7963,44 @@ def _bb_sn_after(resp):
     return resp
 app.after_request_funcs.setdefault(None, []).append(_bb_sn_after)
 # ===== END BB SEEN PER DEVICE =====
+
+# ===== BB THANK YOU =====
+# Tapping Showed up sends the customer a thank-you (email + phone alert) with the star rating link and Book again.
+def _bb_ty_after(resp):
+    try:
+        pp = request.path.strip("/").split("/")
+        if request.method != "POST" or len(pp) != 3 or pp[0] != "ns" or request.form.get("a") != "showed" or not (300 <= resp.status_code < 400):
+            return resp
+        sid, rt = pp[1], pp[2]
+        d = load()
+        shop = d.get(sid)
+        b = next((x for x in (shop or {}).get("bookings") or [] if isinstance(x, dict) and str(x.get("rt")) == rt), None)
+        if not b or not b.get("done") or b.get("thanked") or not b.get("email"):
+            return resp
+        b["thanked"] = True
+        save(d)
+        first = (b.get("name") or "").split(" (")[0].split()[0] if b.get("name") else ""
+        host = request.host_url
+        notify("Thanks for coming to " + shop.get("name", "") + "!",
+               ("Hi " + first + ",\n\n" if first else "") + "Thanks for visiting " + shop.get("name", "") + " for your " + (b.get("service") or "visit") + ".\n\n"
+               "How did we do? Tap a star to rate your visit (it takes one second):\n" + host + "r/" + sid + "/" + rt + "\n\n"
+               "Book your next visit:\n" + host + "b/" + sid + "\n\nMahalo!", b["email"])
+    except Exception as ex:
+        print("thank you:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).append(_bb_ty_after)
+_bb_ca_label_typrev = _bb_ca_label
+def _bb_ca_label(subj):
+    if (subj or "").startswith("Thanks for coming"):
+        return "green", "&#11088;", "Thanks for coming &middot; rate your visit"
+    if (subj or "").startswith("New ") and "-star rating for" in (subj or ""):
+        return "blue", "&#11088;", str(escape(subj))
+    return _bb_ca_label_typrev(subj)
+try:
+    _BB_JA.update({"Book again": "もう一度予約する", "Tap a star.": "星をタップしてください。", "1 = poor &middot; 5 = great": "1 = 不満 &middot; 5 = 大満足"})
+except Exception:
+    pass
+# ===== END BB THANK YOU =====
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
