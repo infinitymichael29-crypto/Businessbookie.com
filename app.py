@@ -8002,5 +8002,452 @@ except Exception:
     pass
 # ===== END BB THANK YOU =====
 
+# ===== BB BRAND LOOK =====
+# A business can bring its own look: scan the QR code that points to its website (or type the address), and
+# Business-Bookie reads the site's logo, main colour and name onto its booking page.
+# To stop anyone dressing up as another business, the look only goes live when the business email matches the
+# website (e.g. @mcdonalds.com for mcdonalds.com) and that email is confirmed - otherwise it waits for admin approval.
+import ipaddress as _bb_br_ip, socket as _bb_br_sock, base64 as _bb_br_b64
+import urllib.request as _bb_br_req, urllib.parse as _bb_br_up, urllib.error as _bb_br_err
+from html.parser import HTMLParser as _bb_br_HP
+_BB_BR_HTML_MAX = 1500000
+_BB_BR_IMG_MAX = 300000
+_BB_BR_FREE = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "live.com", "icloud.com", "aol.com", "msn.com", "proton.me", "protonmail.com"}
+def _bb_br_safe(url):
+    """Only plain web addresses on the public internet (no private, local or cloud-internal addresses)."""
+    try:
+        u = _bb_br_up.urlsplit(url)
+        if u.scheme not in ("http", "https") or not u.hostname or u.port not in (None, 80, 443) or u.username or u.password:
+            return False
+        infos = _bb_br_sock.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), proto=_bb_br_sock.IPPROTO_TCP)
+        if not infos:
+            return False
+        for inf in infos:
+            ip = _bb_br_ip.ip_address(inf[4][0].split("%")[0])
+            if not ip.is_global or ip.is_multicast:
+                return False
+        return True
+    except Exception:
+        return False
+class _BbBrNoRedir(_bb_br_req.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+def _bb_br_get(url, limit):
+    """Fetch a public web address (following up to 4 redirects, each one re-checked). Returns (final url, content type, bytes)."""
+    op = _bb_br_req.build_opener(_BbBrNoRedir)
+    for _ in range(5):
+        if not _bb_br_safe(url):
+            raise ValueError("address not allowed")
+        rq = _bb_br_req.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Business-Bookie brand reader)", "Accept": "*/*"})
+        try:
+            r = op.open(rq, timeout=8)
+        except _bb_br_err.HTTPError as e:
+            if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location"):
+                url = _bb_br_up.urljoin(url, e.headers["Location"])
+                continue
+            raise
+        data = r.read(limit + 1)
+        if len(data) > limit:
+            raise ValueError("too big")
+        return r.geturl() or url, (r.headers.get("Content-Type") or "").split(";")[0].strip().lower(), data
+    raise ValueError("too many redirects")
+class _BbBrParse(_bb_br_HP):
+    def __init__(self):
+        super().__init__()
+        self.meta, self.links, self.imgs, self.title, self.style, self._in = {}, [], [], "", "", None
+    def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v or "") for k, v in attrs}
+        if tag == "meta":
+            k = (a.get("property") or a.get("name") or "").lower()
+            if k and "content" in a:
+                self.meta.setdefault(k, a["content"])
+        elif tag == "link":
+            self.links.append(a)
+        elif tag == "img":
+            self.imgs.append(a)
+        elif tag in ("title", "style"):
+            self._in = tag
+    def handle_endtag(self, tag):
+        if tag == self._in:
+            self._in = None
+    def handle_data(self, data):
+        if self._in == "title":
+            self.title += data
+        elif self._in == "style":
+            self.style += data
+def _bb_br_hex(c):
+    c = (c or "").strip().lower()
+    m = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6})", c)
+    if not m:
+        return None
+    h = m.group(1)
+    return "#" + ("".join(x * 2 for x in h) if len(h) == 3 else h)
+def _bb_br_dull(c):
+    r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+    return max(r, g, b) - min(r, g, b) < 24 or max(r, g, b) < 40 or min(r, g, b) > 225
+def _bb_br_text(c):
+    r, g, b = [int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return "#111111" if (0.299 * r + 0.587 * g + 0.114 * b) > 0.62 else "#ffffff"
+def _bb_br_kind(data):
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:4] == b"\x00\x00\x01\x00":
+        return "image/x-icon"
+    return None
+def _bb_br_read(site):
+    """Read a website's look: {"site", "name", "color", "logo": (mime, bytes) or None}."""
+    import time as _t
+    t0 = _t.time()
+    final, ctype, html = _bb_br_get(site, _BB_BR_HTML_MAX)
+    p = _BbBrParse()
+    try:
+        p.feed(html.decode("utf-8", "replace"))
+    except Exception:
+        pass
+    name = (p.meta.get("og:site_name") or p.meta.get("application-name") or re.split(r"\s+[|\-–—:]\s+", p.title.strip())[0] or "").strip()[:60]
+    color = _bb_br_hex(p.meta.get("theme-color")) or _bb_br_hex(p.meta.get("msapplication-tilecolor"))
+    if not color or _bb_br_dull(color):
+        counts = {}
+        for c in re.findall(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b", p.style):
+            c = _bb_br_hex(c)
+            if c and not _bb_br_dull(c):
+                counts[c] = counts.get(c, 0) + 1
+        color = max(counts, key=counts.get) if counts else (color if color and not _bb_br_dull(color) else None)
+    cands = []
+    for im in p.imgs:
+        blob = " ".join([im.get("src", ""), im.get("alt", ""), im.get("class", ""), im.get("id", "")]).lower()
+        if "logo" in blob and im.get("src"):
+            cands.append(im["src"])
+    for rel in ("apple-touch-icon", "icon"):
+        for l in p.links:
+            if rel in (l.get("rel") or "").lower().split() and l.get("href"):
+                cands.append(l["href"])
+    if p.meta.get("og:image"):
+        cands.append(p.meta["og:image"])
+    cands.append("/favicon.ico")
+    logo, seen = None, set()
+    for c in cands:
+        if _t.time() - t0 > 15 or len(seen) >= 4:
+            break
+        u = _bb_br_up.urljoin(final, c.strip())
+        if u in seen or u.lower().split("?")[0].endswith(".svg") or u.startswith("data:"):
+            continue
+        seen.add(u)
+        try:
+            _, _, data = _bb_br_get(u, _BB_BR_IMG_MAX)
+        except Exception:
+            continue
+        k = _bb_br_kind(data)
+        if k:
+            logo = (k, data)
+            break
+    return {"site": final, "name": name, "color": color, "logo": logo}
+def _bb_br_norm(url):
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if not re.match(r"^https?://", url, re.I):
+        url = "https://" + url
+    return url[:300]
+def _bb_br_domain_ok(email, site):
+    ed = (email or "").split("@")[-1].strip().lower()
+    host = (_bb_br_up.urlsplit(site).hostname or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    if not ed or not host or ed in _BB_BR_FREE:
+        return False
+    return host == ed or host.endswith("." + ed) or ed.endswith("." + host)
+def _bb_br_live(shop):
+    br = (shop or {}).get("brand") or {}
+    if not br.get("on"):
+        return False
+    return br.get("ok") == "admin" or (br.get("ok") == "domain" and bool(shop.get("live")))
+def _bb_br_t(kind):
+    k = _bb_dbkey()
+    return "bb_" + kind if k == "shops" else "bb_" + kind + "_" + _bb_ca_re.sub(r"[^a-z0-9_]", "", k.lower())
+def _bb_br_logo_put(sid, mime, data):
+    v = mime + ";" + _bb_br_b64.b64encode(data).decode()
+    if os.environ.get("DATABASE_URL"):
+        _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_br_t("brandlogo") + " (k TEXT PRIMARY KEY, v TEXT)",
+                      "INSERT INTO " + _bb_br_t("brandlogo") + " (k, v) VALUES (" + _bb_sq(sid) + ", " + _bb_sq(v) + ") ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"])
+    else:
+        with open(os.path.join(os.path.dirname(os.path.abspath(DB)), _bb_br_t("brandlogo") + "_" + re.sub(r"[^A-Za-z0-9_-]", "", sid) + ".txt"), "w") as f:
+            f.write(v)
+def _bb_br_logo_get(sid):
+    try:
+        if os.environ.get("DATABASE_URL"):
+            r = _bb_db_plain(["CREATE TABLE IF NOT EXISTS " + _bb_br_t("brandlogo") + " (k TEXT PRIMARY KEY, v TEXT)",
+                              "SELECT v FROM " + _bb_br_t("brandlogo") + " WHERE k = " + _bb_sq(sid)])
+            v = r[0][0] if r else None
+        else:
+            p = os.path.join(os.path.dirname(os.path.abspath(DB)), _bb_br_t("brandlogo") + "_" + re.sub(r"[^A-Za-z0-9_-]", "", sid) + ".txt")
+            v = open(p).read() if os.path.exists(p) else None
+        if not v:
+            return None
+        mime, _, b = v.partition(";")
+        return mime, _bb_br_b64.b64decode(b)
+    except Exception as ex:
+        print("brand logo read:", ex, flush=True)
+        return None
+def _bb_br_apply(d, sid, site=None, logo=None, color=None, name=None, host=""):
+    """Save a look for this business, decide whether it can go live, and ask the admin if it can't."""
+    shop = d[sid]
+    old = dict(shop.get("brand") or {})
+    br = dict(old)
+    if site is not None:
+        br["site"] = site
+    if color:
+        br["color"] = color
+    if name:
+        br["name"] = name
+    if logo:
+        _bb_br_logo_put(sid, logo[0], logo[1])
+        br["logo"] = True
+        br["v"] = int(br.get("v") or 0) + 1
+    br["on"] = bool(br.get("color") or br.get("logo"))
+    was = br.get("ok")
+    br["ok"] = "domain" if br.get("site") and _bb_br_domain_ok(shop.get("email"), br["site"]) else (was if was == "admin" and site is None and not logo else None)
+    br["at"] = (datetime.utcnow() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M")
+    shop["brand"] = br
+    save(d)
+    if br["on"] and not br["ok"] and not (old.get("on") and not old.get("ok")):
+        try:
+            notify("Brand look waiting for approval: " + shop.get("name", ""), shop.get("name", "") + " (" + (shop.get("email") or "") + ") wants to use its own look"
+                   + (" from " + br["site"] if br.get("site") else "") + ".\n\nCheck it and approve or reject: " + host + "admin/brands", GMAIL)
+        except Exception as ex:
+            print("brand notify:", ex, flush=True)
+    return br
+def _bb_br_status(shop):
+    br = (shop or {}).get("brand") or {}
+    if not br.get("on"):
+        return "&#9898; Standard Business-Bookie look"
+    if _bb_br_live(shop):
+        return "&#9989; Your look is live on your booking page"
+    if br.get("ok") == "domain":
+        return "&#9203; Confirm your business email to switch your look on"
+    return ("&#9203; Waiting for approval. Your business email doesn't match " + str(escape(_bb_br_up.urlsplit(br.get("site") or "").hostname or "your website"))
+            + ", so Business-Bookie checks it first (usually within a day)." if br.get("site") else "&#9203; Waiting for approval (usually within a day).")
+def _bb_br_bar(sid, shop, preview=False):
+    br = (shop or {}).get("brand") or {}
+    if not br.get("on") or not (preview or _bb_br_live(shop)):
+        return ""
+    c = br.get("color") or "#1a6dff"
+    t = _bb_br_text(c)
+    nm = str(escape(br.get("name") or shop.get("name") or ""))
+    img = ("<img src='/brand/logo/" + sid + "?v=" + str(br.get("v") or 0) + "' alt='' style='height:46px;width:46px;object-fit:contain;background:#fff;border-radius:10px;padding:3px'>"
+           if br.get("logo") else "")
+    return ("<style>body button:not([style]){background:" + c + ";color:" + t + "}a.bbbrandbtn{background:" + c + ";color:" + t + "}</style>"
+            "<div class='bbbrand' style='display:flex;align-items:center;gap:12px;background:" + c + ";color:" + t + ";padding:10px 12px;border-radius:14px;margin:8px 0'>"
+            + img + "<b style='font-size:20px'>" + nm + "</b></div>")
+_BB_BR_SCAN_JS = ("<script>window.bbScanQR=async function(inp,target,msg){var m=document.getElementById(msg),f=inp.files&&inp.files[0];if(!f)return;m.textContent='Reading the QR code...';"
+    "try{var img=await createImageBitmap(f),s=Math.min(1,1024/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=img.width*s;c.height=img.height*s;"
+    "var x=c.getContext('2d');x.drawImage(img,0,0,c.width,c.height);var txt=null;"
+    "if('BarcodeDetector' in window){try{var r=await new BarcodeDetector({formats:['qr_code']}).detect(c);if(r.length)txt=r[0].rawValue}catch(e){}}"
+    "if(!txt){if(!window.jsQR){await new Promise(function(ok,no){var sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)})}"
+    "var d=x.getImageData(0,0,c.width,c.height),q=jsQR(d.data,c.width,c.height);if(q)txt=q.data}"
+    "if(txt&&/^https?:\\/\\//i.test(txt)){document.getElementById(target).value=txt;m.textContent='\\u2705 Found: '+txt}"
+    "else if(txt){m.textContent='That QR code isn\\u2019t a website address. Type your website instead.'}else{m.textContent='Couldn\\u2019t read a QR code. Try a closer, sharper photo, or type your website.'}"
+    "}catch(e){m.textContent='Couldn\\u2019t read that picture. Type your website instead.'}inp.value=''};</script>")
+def _bb_br_scanbox(target, msg):
+    return ("<label class='bbscanbtn' style='display:block;text-align:center;padding:10px;border:2px solid #1a6dff;color:#1a6dff;border-radius:8px;font-weight:700;margin:6px 0'>"
+            "&#128247; <span>Scan QR code</span><input type='file' accept='image/*' capture='environment' style='display:none' onchange=\"bbScanQR(this,'" + target + "','" + msg + "')\"></label>"
+            "<div id='" + msg + "' style='font-size:13px;color:#556'></div>")
+@app.route("/brand/logo/<sid>")
+def bb_brand_logo(sid):
+    shop = load().get(sid)
+    br = (shop or {}).get("brand") or {}
+    if not br.get("logo") or not (_bb_br_live(shop) or _bb_sess.get("own_" + sid) or _bb_adm_ok()):
+        return "", 404
+    lg = _bb_br_logo_get(sid)
+    if not lg:
+        return "", 404
+    resp = app.response_class(lg[1], mimetype=lg[0])
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+@app.route("/brand/<sid>", methods=["GET", "POST"])
+def bb_brand_page(sid):
+    d = load()
+    shop = d.get(sid)
+    if not isinstance(shop, dict):
+        return S + "<h1>Business not found</h1>", 404
+    if not _bb_sess.get("own_" + sid):
+        return _bb_rd("/login")
+    msg = ""
+    if request.method == "POST":
+        act = request.form.get("act", "")
+        try:
+            if act == "fetch":
+                site = _bb_br_norm(request.form.get("site"))
+                if not site:
+                    msg = "Type or scan your website address first."
+                else:
+                    got = _bb_br_read(site)
+                    if not (got["logo"] or got["color"]):
+                        msg = "We opened your website but couldn't find a logo or colour. Upload your logo and pick a colour below."
+                        _bb_br_apply(d, sid, site=got["site"], name=got["name"] or None, host=request.host_url)
+                    else:
+                        _bb_br_apply(d, sid, site=got["site"], logo=got["logo"], color=got["color"], name=got["name"] or None, host=request.host_url)
+                        msg = "&#9989; Got your look from " + str(escape(_bb_br_up.urlsplit(got["site"]).hostname or "")) + "."
+            elif act == "upload":
+                f = request.files.get("logo")
+                data = f.read(_BB_BR_IMG_MAX + 1) if f else b""
+                kind = _bb_br_kind(data) if data else None
+                if not data:
+                    msg = "Pick a picture first."
+                elif len(data) > _BB_BR_IMG_MAX:
+                    msg = "That picture is too big. Please use one under 300 KB."
+                elif not kind:
+                    msg = "Please upload a PNG, JPG, GIF or WEBP picture."
+                else:
+                    _bb_br_apply(d, sid, logo=(kind, data), host=request.host_url)
+                    msg = "&#9989; Logo saved."
+            elif act == "color":
+                c = _bb_br_hex(request.form.get("color"))
+                if c:
+                    _bb_br_apply(d, sid, color=c, host=request.host_url)
+                    msg = "&#9989; Colour saved."
+            elif act == "off":
+                shop["brand"] = {}
+                save(d)
+                msg = "Back to the standard Business-Bookie look."
+        except Exception as ex:
+            print("brand page:", ex, flush=True)
+            msg = "We couldn't open that website. Check the address, or upload your logo and pick a colour below."
+        shop = load().get(sid) or shop
+    br = shop.get("brand") or {}
+    e = lambda v: str(escape(str(v or "")))
+    prev = _bb_br_bar(sid, shop, preview=True)
+    return (S + _BB_BR_SCAN_JS + "<p><a href='/d/" + sid + "'>&#8592; Back to " + e(shop.get("name")) + "</a></p><h1>&#127912; Your look</h1>"
+            + ("<div class='card'>" + msg + "</div>" if msg else "")
+            + "<div class='card bbbrstatus'><b>" + _bb_br_status(shop) + "</b></div>"
+            + ("<p style='font-size:13px;color:#556;margin-bottom:0'>Preview of the top of your booking page:</p>" + prev if prev else "")
+            + "<h3>Get it from your website</h3><p style='font-size:14px;color:#556'>Scan the QR code that goes to your website, or type the address. We copy your logo, main colour and name.</p>"
+            "<form method='post'><input type='hidden' name='act' value='fetch'><input name='site' id='bbbrsite' type='url' inputmode='url' placeholder='https://yourbusiness.com' value='" + e(br.get("site")) + "'>"
+            + _bb_br_scanbox("bbbrsite", "bbbrmsg") + "<button>Get my look</button></form>"
+            "<h3>Or set it yourself</h3><form method='post' enctype='multipart/form-data'><input type='hidden' name='act' value='upload'><input type='file' name='logo' accept='image/png,image/jpeg,image/gif,image/webp'><button>Upload logo</button></form>"
+            "<form method='post'><input type='hidden' name='act' value='color'><input type='color' name='color' value='" + e(br.get("color") or "#1a6dff") + "' style='height:52px;padding:4px'><button>Save colour</button></form>"
+            + ("<form method='post'><input type='hidden' name='act' value='off'><button style='background:#fff;color:#e23b3b;border:2px solid #e23b3b'>Use the standard look</button></form>" if br.get("on") else "")
+            + "<p style='font-size:12px;color:#889'>To keep anyone from pretending to be another business, your look switches on by itself only when your business email matches your website "
+            "(for example @mcdonalds.com for mcdonalds.com). Otherwise Business-Bookie checks it first.</p>")
+@app.route("/admin/brands", methods=["GET", "POST"])
+def bb_admin_brands():
+    if not _bb_adm_ok():
+        return _bb_rd("/admin")
+    d = load()
+    if request.method == "POST":
+        sid, act = request.form.get("sid", ""), request.form.get("act", "")
+        shop = d.get(sid)
+        if isinstance(shop, dict) and (shop.get("brand") or {}).get("on"):
+            if act == "approve":
+                shop["brand"]["ok"] = "admin"
+            elif act == "reject":
+                shop["brand"] = {}
+            save(d)
+            try:
+                notify(("Your look is live on Business-Bookie" if act == "approve" else "Your look wasn't approved"),
+                       ("Your logo and colours now show on your booking page." if act == "approve" else
+                        "We couldn't confirm the look belongs to your business, so your booking page uses the standard look. Reply to this email if you have questions."),
+                       shop.get("email"))
+            except Exception as ex:
+                print("brand decision mail:", ex, flush=True)
+        return _bb_rd("/admin/brands")
+    e = lambda v: str(escape(str(v or "")))
+    rows = ""
+    for sid, shop in d.items():
+        br = (shop.get("brand") or {}) if isinstance(shop, dict) else {}
+        if br.get("on") and not br.get("ok"):
+            rows += ("<div class='card' style='text-align:left'><b>" + e(shop.get("name")) + "</b><br><span style='font-size:13px'>" + e(shop.get("email")) + " &middot; "
+                     + e(br.get("site") or "uploaded by owner") + "</span>" + _bb_br_bar(sid, shop, preview=True)
+                     + "<form method='post' style='display:flex;gap:8px'><input type='hidden' name='sid' value='" + e(sid) + "'>"
+                     "<button name='act' value='approve' style='background:#1faa59'>Approve</button><button name='act' value='reject' style='background:#e23b3b'>Reject</button></form></div>")
+    return S + "<p><a href='/admin'>&#8592; History</a></p><h1>Brand looks waiting</h1>" + (rows or "<p>Nothing waiting.</p>")
+def _bb_br_after(resp):
+    try:
+        if resp.mimetype != "text/html":
+            return resp
+        pp = request.path.strip("/").split("/")
+        if request.method == "POST" and request.path == "/setup" and resp.status_code == 200:
+            h = resp.get_data(as_text=True)
+            i = h.find("action='/create'")
+            j = h.find("</form>", i) if i >= 0 else -1
+            k = h.rfind("<button", i, j) if j >= 0 else -1
+            if k >= 0 and "id='bbbrandsu'" not in h:
+                box = ("<div class='card' id='bbbrandsu' style='text-align:left'><b>&#127912; Have your own look? <span style='font-weight:400'>(optional)</span></b>"
+                       "<div style='font-size:13px;color:#556'>Scan the QR code that goes to your website, or type the address. We'll put your logo and colours on your booking page.</div>"
+                       "<input name='brand_url' id='bbbrurl' type='url' inputmode='url' placeholder='https://yourbusiness.com'>" + _bb_br_scanbox("bbbrurl", "bbbrumsg") + "</div>")
+                resp.set_data(_BB_BR_SCAN_JS + h[:k] + box + h[k:])
+            return resp
+        if request.method != "GET" or resp.status_code != 200:
+            return resp
+        if len(pp) >= 2 and pp[0] in ("b", "m", "r", "my"):
+            shop = load().get(pp[1])
+            bar = _bb_br_bar(pp[1], shop) if isinstance(shop, dict) else ""
+            if bar:
+                h = resp.get_data(as_text=True)
+                i = h.find("<h1")
+                if i >= 0 and "class='bbbrand'" not in h:
+                    resp.set_data(h[:i] + bar + h[i:])
+        elif len(pp) == 2 and pp[0] == "d" and _bb_sess.get("own_" + pp[1]):
+            h = resp.get_data(as_text=True)
+            a = "&#9999;&#65039; Edit customer booking page</a>"
+            i = h.find(a)
+            if i >= 0 and "/brand/" + pp[1] not in h:
+                i += len(a)
+                resp.set_data(h[:i] + "<a href='/brand/" + pp[1] + "' style='flex:1;min-width:40%;text-align:center;border:2px solid #1a6dff;color:#1a6dff;padding:10px;border-radius:10px;text-decoration:none;font-weight:700'>&#127912; Your look</a>" + h[i:])
+        elif len(pp) == 2 and pp[0] == "done":
+            shop = load().get(pp[1])
+            if isinstance(shop, dict) and (shop.get("brand") or {}).get("site"):
+                h = resp.get_data(as_text=True)
+                i = h.find("</h1>")
+                if i >= 0:
+                    resp.set_data(h[:i + 5] + "<div class='card' style='text-align:left'>" + _bb_br_status(shop) + _bb_br_bar(pp[1], shop, preview=True)
+                                  + "<a href='/brand/" + pp[1] + "'>Change your look</a></div>" + h[i + 5:])
+        elif request.path == "/admin" and _bb_adm_ok():
+            n = sum(1 for v in load().values() if isinstance(v, dict) and ((v.get("brand") or {}).get("on")) and not (v.get("brand") or {}).get("ok"))
+            h = resp.get_data(as_text=True)
+            i = h.find("</h1>")
+            if i >= 0:
+                resp.set_data(h[:i + 5] + "<p><a href='/admin/brands' style='font-weight:700'>&#127912; Brand looks waiting: " + str(n) + "</a></p>" + h[i + 5:])
+    except Exception as ex:
+        print("brand page add:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).append(_bb_br_after)
+def _bb_br_create_after(resp):
+    """After sign-up: read the website they scanned or typed."""
+    try:
+        if request.method != "POST" or request.path != "/create" or not (300 <= resp.status_code < 400):
+            return resp
+        site = _bb_br_norm(request.form.get("brand_url"))
+        loc = resp.headers.get("Location") or ""
+        m_ = re.search(r"/done/([A-Za-z0-9_-]+)", loc)
+        if not site or not m_:
+            return resp
+        sid = m_.group(1)
+        d = load()
+        if sid not in d:
+            return resp
+        try:
+            got = _bb_br_read(site)
+            _bb_br_apply(d, sid, site=got["site"], logo=got["logo"], color=got["color"], name=got["name"] or None, host=request.host_url)
+        except Exception as ex:
+            print("brand at signup:", ex, flush=True)
+            d[sid]["brand"] = {"site": site, "on": False}
+            save(d)
+    except Exception as ex:
+        print("brand at signup:", ex, flush=True)
+    return resp
+app.after_request_funcs.setdefault(None, []).append(_bb_br_create_after)
+try:
+    _BB_JA.update({"Scan QR code": "QRコードを読み取る"})
+except Exception:
+    pass
+# ===== END BB BRAND LOOK =====
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
